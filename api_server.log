@@ -1,0 +1,369 @@
+2025-04-11 06:57:11,375 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 06:57:11,375 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 06:57:11,375 - csv_query_api - INFO - Initializing Dask DataFrame (this doesn't load data yet due to lazy evaluation)
+2025-04-11 06:57:11,384 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 06:57:11,384 - csv_query_api - INFO - CSV file loaded successfully in 0.01 seconds
+2025-04-11 06:57:11,384 - csv_query_api - INFO - Number of partitions: 66
+2025-04-11 06:57:11,384 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 06:57:11,384 - csv_query_api - INFO - Columns: ['Timestamp', 'From Bank', 'Account', 'To Bank', 'Account.1', 'Amount Received', 'Receiving Currency', 'Amount Paid', 'Payment Currency', 'Payment Format', 'Is Laundering']
+2025-04-11 07:00:39,902 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:00:46,306 - csv_query_api - INFO - ==================================================
+2025-04-11 07:00:46,306 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:00:46.306194
+2025-04-11 07:00:46,306 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:00:46,306 - csv_query_api - INFO - ==================================================
+2025-04-11 07:00:46,837 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:00:46,837 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:00:46,837 - csv_query_api - INFO - Initializing Dask DataFrame (this doesn't load data yet due to lazy evaluation)
+2025-04-11 07:00:46,843 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:00:46,843 - csv_query_api - INFO - CSV file loaded successfully in 0.01 seconds
+2025-04-11 07:00:46,843 - csv_query_api - INFO - Number of partitions: 66
+2025-04-11 07:00:46,843 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:00:46,843 - csv_query_api - INFO - Columns: ['Timestamp', 'From Bank', 'Account', 'To Bank', 'Account.1', 'Amount Received', 'Receiving Currency', 'Amount Paid', 'Payment Currency', 'Payment Format', 'Is Laundering']
+2025-04-11 07:01:07,940 - csv_query_api - INFO - Request d10c2f63-bc1d-4fbf-bd9d-66a3c599c0ac started: GET /docs - Client: 127.0.0.1
+2025-04-11 07:01:07,940 - csv_query_api - INFO - Request d10c2f63-bc1d-4fbf-bd9d-66a3c599c0ac completed: Status 200 - Took 0.0003 seconds
+2025-04-11 07:01:07,997 - csv_query_api - INFO - Request 43c62052-def6-4ef2-bb41-22d71e7a6590 started: GET /openapi.json - Client: 127.0.0.1
+2025-04-11 07:01:08,008 - csv_query_api - INFO - Request 43c62052-def6-4ef2-bb41-22d71e7a6590 completed: Status 200 - Took 0.0109 seconds
+2025-04-11 07:01:23,372 - csv_query_api - INFO - Request aa668f79-103f-42b4-a72a-762b89b779f1 started: GET /query - Client: 127.0.0.1
+2025-04-11 07:01:23,372 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Endpoint called: Query data
+2025-04-11 07:01:23,372 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Query parameters: columns='None', filters='None', limit=100, offset=0
+2025-04-11 07:01:23,372 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Computing query results (this may take time for large datasets)
+2025-04-11 07:03:09,442 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Query returned 179702229 total rows
+2025-04-11 07:03:09,443 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Applying pagination: offset=0, limit=100
+2025-04-11 07:03:09,445 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Query completed in 106.0731 seconds
+2025-04-11 07:03:09,445 - csv_query_api - INFO - [5f833663-b246-47d9-b9d0-8670c5e3fb27] Query performance breakdown: {"column_selection": 1.1920928955078125e-06, "filtering": 0.0, "computation": 106.07031607627869, "pagination": 0.0027360916137695312}
+2025-04-11 07:03:09,940 - csv_query_api - INFO - Request aa668f79-103f-42b4-a72a-762b89b779f1 completed: Status 200 - Took 106.5685 seconds
+2025-04-11 07:05:45,505 - csv_query_api - INFO - Request 7caf97ce-3f66-4225-9e2d-58e033572996 started: GET /query - Client: 127.0.0.1
+2025-04-11 07:05:45,506 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Endpoint called: Query data
+2025-04-11 07:05:45,506 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Query parameters: columns='None', filters='None', limit=2, offset=5
+2025-04-11 07:05:45,506 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Computing query results (this may take time for large datasets)
+2025-04-11 07:07:37,624 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Query returned 179702229 total rows
+2025-04-11 07:07:37,624 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Applying pagination: offset=5, limit=2
+2025-04-11 07:07:37,627 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Query completed in 112.1201 seconds
+2025-04-11 07:07:37,627 - csv_query_api - INFO - [1e286afc-f24c-4f5c-8e74-73a53b7ddb7c] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0, "computation": 112.11726713180542, "pagination": 0.00286102294921875}
+2025-04-11 07:07:38,097 - csv_query_api - INFO - Request 7caf97ce-3f66-4225-9e2d-58e033572996 completed: Status 200 - Took 112.5916 seconds
+2025-04-11 07:10:09,628 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:10:10,852 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:10:10,852 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:10:10,852 - csv_query_api - INFO - Initializing Dask DataFrame with optimized settings
+2025-04-11 07:10:10,862 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:10:10,862 - csv_query_api - INFO - CSV file loaded successfully in 0.01 seconds
+2025-04-11 07:10:10,862 - csv_query_api - INFO - Number of partitions: 66
+2025-04-11 07:10:10,862 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:10:10,862 - csv_query_api - INFO - Columns: ['Timestamp', 'From Bank', 'Account', 'To Bank', 'Account.1', 'Amount Received', 'Receiving Currency', 'Amount Paid', 'Payment Currency', 'Payment Format', 'Is Laundering']
+2025-04-11 07:10:10,862 - csv_query_api - INFO - Starting background computation of total row count
+2025-04-11 07:10:35,993 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:10:37,582 - csv_query_api - INFO - ==================================================
+2025-04-11 07:10:37,582 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:10:37.582225
+2025-04-11 07:10:37,582 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:10:37,582 - csv_query_api - INFO - ==================================================
+2025-04-11 07:10:38,139 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:10:38,139 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:10:38,139 - csv_query_api - INFO - Initializing Dask DataFrame with optimized settings
+2025-04-11 07:10:38,146 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:10:38,146 - csv_query_api - INFO - CSV file loaded successfully in 0.01 seconds
+2025-04-11 07:10:38,146 - csv_query_api - INFO - Number of partitions: 66
+2025-04-11 07:10:38,146 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:10:38,146 - csv_query_api - INFO - Columns: ['Timestamp', 'From Bank', 'Account', 'To Bank', 'Account.1', 'Amount Received', 'Receiving Currency', 'Amount Paid', 'Payment Currency', 'Payment Format', 'Is Laundering']
+2025-04-11 07:10:38,146 - csv_query_api - INFO - Starting background computation of total row count
+2025-04-11 07:10:46,317 - csv_query_api - INFO - Request 591bd056-3a6f-4ecf-83f5-769d958b71fb started: GET /query - Client: 127.0.0.1
+2025-04-11 07:10:46,351 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Endpoint called: Query data
+2025-04-11 07:10:46,360 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Query parameters: columns='None', filters='None', limit=2, offset=5
+2025-04-11 07:10:46,369 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Applying optimized pagination strategy
+2025-04-11 07:10:46,380 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Using approximate row count
+2025-04-11 07:10:46,396 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Using head+tail strategy for pagination
+2025-04-11 07:11:18,478 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Query completed in 32.1090 seconds
+2025-04-11 07:11:18,485 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0, "computation": 32.01829504966736}
+2025-04-11 07:11:18,492 - csv_query_api - INFO - [57b15f9c-f373-4f83-81ec-4d36b36513c6] Returned 2 rows
+2025-04-11 07:11:18,518 - csv_query_api - INFO - Request 591bd056-3a6f-4ecf-83f5-769d958b71fb completed: Status 200 - Took 32.2012 seconds
+2025-04-11 07:11:30,989 - csv_query_api - INFO - Request 07b6fa3a-1369-4b03-b33d-05559d2d2ae2 started: GET /query - Client: 127.0.0.1
+2025-04-11 07:11:30,996 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Endpoint called: Query data
+2025-04-11 07:11:30,998 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Query parameters: columns='None', filters='None', limit=2, offset=5
+2025-04-11 07:11:31,032 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Applying optimized pagination strategy
+2025-04-11 07:11:31,103 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Using approximate row count
+2025-04-11 07:11:31,107 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Using head+tail strategy for pagination
+2025-04-11 07:11:59,393 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Query completed in 28.3610 seconds
+2025-04-11 07:11:59,465 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0, "computation": 28.360599994659424}
+2025-04-11 07:11:59,476 - csv_query_api - INFO - [1cbccbb2-c270-4416-96ba-6bcad6ee7df3] Returned 2 rows
+2025-04-11 07:11:59,538 - csv_query_api - INFO - Request 07b6fa3a-1369-4b03-b33d-05559d2d2ae2 completed: Status 200 - Took 28.5491 seconds
+2025-04-11 07:12:57,669 - csv_query_api - INFO - Total row count computed: 179702229 rows in 139.52 seconds
+2025-04-11 07:13:37,042 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:19:13,185 - csv_query_api - INFO - ==================================================
+2025-04-11 07:19:13,186 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:19:13.186015
+2025-04-11 07:19:13,186 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:19:13,186 - csv_query_api - INFO - ==================================================
+2025-04-11 07:19:13,810 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:19:13,810 - csv_query_api - INFO - Setting up Dask distributed client for parallel processing
+2025-04-11 07:19:15,126 - csv_query_api - INFO - Dask client set up with 9 workers
+2025-04-11 07:19:15,126 - csv_query_api - INFO - Dask dashboard available at: http://127.0.0.1:64663/status
+2025-04-11 07:19:15,126 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:19:15,126 - csv_query_api - INFO - Using optimized partition size: 128MB for target of 200 partitions
+2025-04-11 07:19:15,126 - csv_query_api - INFO - Initializing Dask DataFrame with optimized settings
+2025-04-11 07:19:15,141 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:19:15,141 - csv_query_api - INFO - CSV file loaded successfully in 0.01 seconds
+2025-04-11 07:19:15,141 - csv_query_api - INFO - Number of partitions: 133
+2025-04-11 07:19:15,141 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:19:15,141 - csv_query_api - INFO - Starting background computation of total row count
+2025-04-11 07:19:15,141 - csv_query_api - INFO - Persisting first few partitions in memory for faster access...
+2025-04-11 07:19:15,141 - csv_query_api - INFO - Using parallel count method with distributed client
+2025-04-11 07:19:15,146 - csv_query_api - INFO - First partitions persisted in memory
+2025-04-11 07:20:10,826 - csv_query_api - INFO - Total row count computed: 179702229 rows in 55.68 seconds
+2025-04-11 07:20:22,596 - csv_query_api - INFO - Request a31bb997-41fc-4c0b-80d4-0fa8e69bb2d1 started: GET /query - Client: 127.0.0.1
+2025-04-11 07:20:22,597 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Endpoint called: Query data
+2025-04-11 07:20:22,597 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Query parameters: columns='None', filters='None', limit=2, offset=5
+2025-04-11 07:20:22,597 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Applying optimized pagination strategy
+2025-04-11 07:20:22,597 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Using pre-computed row count: 179702229
+2025-04-11 07:20:22,597 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Using optimized approach for small offset
+2025-04-11 07:20:24,135 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Query completed in 1.5378 seconds
+2025-04-11 07:20:24,135 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0, "computation": 1.5367298126220703}
+2025-04-11 07:20:24,135 - csv_query_api - INFO - [448d761b-379e-4b3c-b178-6b5eb28ce389] Returned 2 rows
+2025-04-11 07:20:24,136 - csv_query_api - INFO - Request a31bb997-41fc-4c0b-80d4-0fa8e69bb2d1 completed: Status 200 - Took 1.5393 seconds
+2025-04-11 07:21:42,183 - csv_query_api - INFO - Request 774878a3-93de-4e88-b8d3-ceefdf0c342b started: GET /query - Client: 127.0.0.1
+2025-04-11 07:21:42,184 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Endpoint called: Query data
+2025-04-11 07:21:42,184 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Query parameters: columns='None', filters='Amount Paid:9.72', limit=2, offset=0
+2025-04-11 07:21:42,184 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Applying filters: ['Amount Paid:9.72']
+2025-04-11 07:21:42,184 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Filtering where Amount Paid = 9.72
+2025-04-11 07:21:42,191 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Applying optimized pagination strategy
+2025-04-11 07:21:42,192 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Using pre-computed row count: 179702229
+2025-04-11 07:21:42,192 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Using head strategy for pagination (no offset)
+2025-04-11 07:21:43,762 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Query completed in 1.5781 seconds
+2025-04-11 07:21:43,762 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.007443904876708984, "computation": 1.5703301429748535}
+2025-04-11 07:21:43,762 - csv_query_api - INFO - [f4451c63-f8fa-41b2-b446-ce82697f5945] Returned 0 rows
+2025-04-11 07:21:43,762 - csv_query_api - INFO - Request 774878a3-93de-4e88-b8d3-ceefdf0c342b completed: Status 200 - Took 1.5792 seconds
+2025-04-11 07:25:35,310 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:25:35,310 - csv_query_api - INFO - Closing Dask client and cluster
+2025-04-11 07:25:36,077 - csv_query_api - INFO - Dask resources released
+2025-04-11 07:25:37,007 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:25:37,007 - csv_query_api - INFO - Setting up Dask distributed client for parallel processing
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Dask client set up with 9 workers
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Dask dashboard available at: http://127.0.0.1:64850/status
+2025-04-11 07:25:38,328 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Using optimized partition size: 128MB for target of 200 partitions
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Checking for duplicate column names in CSV header
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Found duplicate column 'Account' at position 4, renaming to 'Account_4'
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Detected 1 duplicate column names, using custom header handling
+2025-04-11 07:25:38,328 - csv_query_api - INFO - Initializing Dask DataFrame with optimized settings
+2025-04-11 07:25:38,343 - csv_query_api - INFO - CSV loaded with renamed columns: {4: 'Account_4'}
+2025-04-11 07:25:38,343 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:25:38,343 - csv_query_api - INFO - CSV file loaded successfully in 0.01 seconds
+2025-04-11 07:25:38,343 - csv_query_api - INFO - Number of partitions: 133
+2025-04-11 07:25:38,343 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:25:38,343 - csv_query_api - INFO - Starting background computation of total row count
+2025-04-11 07:25:38,343 - csv_query_api - INFO - Persisting first few partitions in memory for faster access...
+2025-04-11 07:25:38,343 - csv_query_api - INFO - Using parallel count method with distributed client
+2025-04-11 07:25:38,350 - csv_query_api - INFO - First partitions persisted in memory
+2025-04-11 07:26:04,356 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:26:04,357 - csv_query_api - INFO - Closing Dask client and cluster
+2025-04-11 07:26:04,369 - csv_query_api - ERROR - Error computing row count: len-abf66e87d08296a9cb34d853a521fa43 cancelled for reason: unknown.
+Traceback (most recent call last):
+  File "/Users/dsandor/Projects/bigdata/load_large_csv_with_dask.py", line 318, in compute_row_count
+    count = future.result()
+  File "/Users/dsandor/Projects/bigdata/.venv/lib/python3.13/site-packages/distributed/client.py", line 401, in result
+    return self.client.sync(self._result, callback_timeout=timeout)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dsandor/Projects/bigdata/.venv/lib/python3.13/site-packages/distributed/client.py", line 417, in _result
+    raise exception
+distributed.client.FutureCancelledError: len-abf66e87d08296a9cb34d853a521fa43 cancelled for reason: unknown.
+2025-04-11 07:26:08,442 - csv_query_api - INFO - Dask resources released
+2025-04-11 07:27:00,159 - csv_query_api - INFO - ==================================================
+2025-04-11 07:27:00,159 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:27:00.159951
+2025-04-11 07:27:00,159 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:27:00,160 - csv_query_api - INFO - ==================================================
+2025-04-11 07:27:00,720 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:27:00,720 - csv_query_api - INFO - Setting up Dask distributed client for parallel processing
+2025-04-11 07:27:01,955 - csv_query_api - INFO - Dask client set up with 9 workers
+2025-04-11 07:27:01,955 - csv_query_api - INFO - Dask dashboard available at: http://127.0.0.1:64977/status
+2025-04-11 07:27:01,955 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:27:01,955 - csv_query_api - INFO - Using optimized partition size: 128MB for target of 200 partitions
+2025-04-11 07:27:01,955 - csv_query_api - INFO - Checking for duplicate column names in CSV header
+2025-04-11 07:27:01,956 - csv_query_api - INFO - Found duplicate column 'Account' at position 4, renaming to 'Account_4'
+2025-04-11 07:27:01,956 - csv_query_api - INFO - Detected 1 duplicate column names, using custom header handling
+2025-04-11 07:27:01,956 - csv_query_api - INFO - Initializing Dask DataFrame with optimized settings
+2025-04-11 07:27:01,975 - csv_query_api - INFO - CSV loaded with renamed columns: {4: 'Account_4'}
+2025-04-11 07:27:01,975 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:27:01,975 - csv_query_api - INFO - CSV file loaded successfully in 0.02 seconds
+2025-04-11 07:27:01,975 - csv_query_api - INFO - Number of partitions: 133
+2025-04-11 07:27:01,975 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:27:01,975 - csv_query_api - INFO - Starting background computation of total row count
+2025-04-11 07:27:01,975 - csv_query_api - INFO - Persisting first few partitions in memory for faster access...
+2025-04-11 07:27:01,975 - csv_query_api - INFO - Using parallel count method with distributed client
+2025-04-11 07:27:01,981 - csv_query_api - INFO - First partitions persisted in memory
+2025-04-11 07:27:53,318 - csv_query_api - INFO - Total row count computed: 179702229 rows in 51.34 seconds
+2025-04-11 07:28:24,426 - csv_query_api - INFO - ==================================================
+2025-04-11 07:28:24,426 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:28:24.426194
+2025-04-11 07:28:24,426 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:28:24,426 - csv_query_api - INFO - ==================================================
+2025-04-11 07:28:39,571 - csv_query_api - INFO - ==================================================
+2025-04-11 07:28:39,571 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:28:39.571683
+2025-04-11 07:28:39,571 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:28:39,571 - csv_query_api - INFO - ==================================================
+2025-04-11 07:29:37,553 - csv_query_api - INFO - ==================================================
+2025-04-11 07:29:37,553 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:29:37.553117
+2025-04-11 07:29:37,553 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:29:37,553 - csv_query_api - INFO - ==================================================
+2025-04-11 07:30:41,849 - csv_query_api - INFO - Server shutting down
+2025-04-11 07:30:41,849 - csv_query_api - INFO - Closing Dask client and cluster
+2025-04-11 07:30:42,278 - csv_query_api - INFO - Dask resources released
+2025-04-11 07:30:52,998 - csv_query_api - INFO - ==================================================
+2025-04-11 07:30:52,998 - csv_query_api - INFO - Starting FastAPI server at 2025-04-11T07:30:52.998602
+2025-04-11 07:30:52,998 - csv_query_api - INFO - CSV file to be loaded: HI-Large_Trans.csv
+2025-04-11 07:30:52,998 - csv_query_api - INFO - ==================================================
+2025-04-11 07:30:53,647 - csv_query_api - INFO - Starting server and loading CSV file: HI-Large_Trans.csv
+2025-04-11 07:30:53,647 - csv_query_api - INFO - Setting up Dask distributed client for parallel processing
+2025-04-11 07:30:54,970 - csv_query_api - INFO - Dask client set up with 9 workers
+2025-04-11 07:30:54,970 - csv_query_api - INFO - Dask dashboard available at: http://127.0.0.1:65119/status
+2025-04-11 07:30:54,970 - csv_query_api - INFO - File size: 15.88 GB
+2025-04-11 07:30:54,970 - csv_query_api - INFO - Using optimized partition size: 128MB for target of 200 partitions
+2025-04-11 07:30:54,970 - csv_query_api - INFO - Checking for duplicate column names in CSV header
+2025-04-11 07:30:54,971 - csv_query_api - INFO - Found duplicate column 'Account' at position 4, renaming to 'Account_4'
+2025-04-11 07:30:54,971 - csv_query_api - INFO - Detected 1 duplicate column names, using custom header handling
+2025-04-11 07:30:54,971 - csv_query_api - INFO - Initializing Dask DataFrame with optimized settings
+2025-04-11 07:30:54,990 - csv_query_api - INFO - CSV loaded with renamed columns: {4: 'Account_4'}
+2025-04-11 07:30:54,990 - csv_query_api - INFO - Computing DataFrame metadata...
+2025-04-11 07:30:54,990 - csv_query_api - INFO - CSV file loaded successfully in 0.02 seconds
+2025-04-11 07:30:54,990 - csv_query_api - INFO - Number of partitions: 133
+2025-04-11 07:30:54,990 - csv_query_api - INFO - Number of columns: 11
+2025-04-11 07:30:54,990 - csv_query_api - INFO - Starting background computation of total row count
+2025-04-11 07:30:54,990 - csv_query_api - INFO - Persisting first few partitions in memory for faster access...
+2025-04-11 07:30:54,990 - csv_query_api - INFO - Using parallel count method with distributed client
+2025-04-11 07:30:54,996 - csv_query_api - INFO - First partitions persisted in memory
+2025-04-11 07:31:47,829 - csv_query_api - INFO - Total row count computed: 179702229 rows in 52.84 seconds
+2025-04-11 07:32:07,813 - csv_query_api - INFO - Request 33114597-4586-4f77-b558-bf51017b6dd1 started: GET /docs - Client: 127.0.0.1
+2025-04-11 07:32:07,814 - csv_query_api - INFO - Request 33114597-4586-4f77-b558-bf51017b6dd1 completed: Status 200 - Took 0.0013 seconds
+2025-04-11 07:32:07,891 - csv_query_api - INFO - Request f2b84856-4c34-4b0a-9795-41271e5bc447 started: GET /openapi.json - Client: 127.0.0.1
+2025-04-11 07:32:07,903 - csv_query_api - INFO - Request f2b84856-4c34-4b0a-9795-41271e5bc447 completed: Status 200 - Took 0.0126 seconds
+2025-04-11 07:32:30,070 - csv_query_api - INFO - Request 1eb02104-19ae-47f7-9b55-f6e8e008098a started: GET /query - Client: 127.0.0.1
+2025-04-11 07:32:30,071 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Endpoint called: Query data
+2025-04-11 07:32:30,071 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Query parameters: columns='None', filters='None', limit=2, offset=0
+2025-04-11 07:32:30,071 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Applying optimized pagination strategy
+2025-04-11 07:32:30,071 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Using pre-computed row count: 179702229
+2025-04-11 07:32:30,071 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Using head strategy for pagination (no offset)
+2025-04-11 07:32:31,610 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Query completed in 1.5394 seconds
+2025-04-11 07:32:31,611 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0, "computation": 1.5369212627410889}
+2025-04-11 07:32:31,611 - csv_query_api - INFO - [c0cfc920-5190-4bf2-ada9-3ae28700cbdb] Returned 2 rows
+2025-04-11 07:32:31,611 - csv_query_api - INFO - Request 1eb02104-19ae-47f7-9b55-f6e8e008098a completed: Status 200 - Took 1.5412 seconds
+2025-04-11 07:33:04,231 - csv_query_api - INFO - Request 3cb662e3-3e5b-4fe2-9e73-b2a9ce4d1730 started: GET /query - Client: 127.0.0.1
+2025-04-11 07:33:04,231 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Endpoint called: Query data
+2025-04-11 07:33:04,231 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Query parameters: columns='None', filters='Account:800104D70', limit=20, offset=0
+2025-04-11 07:33:04,231 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Applying filters: ['Account:800104D70']
+2025-04-11 07:33:04,231 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Filtering where Account = 800104D70
+2025-04-11 07:33:04,237 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Applying optimized pagination strategy
+2025-04-11 07:33:04,237 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Using pre-computed row count: 179702229
+2025-04-11 07:33:04,237 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Using head strategy for pagination (no offset)
+2025-04-11 07:33:05,769 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Query completed in 1.5377 seconds
+2025-04-11 07:33:05,769 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0050809383392333984, "computation": 1.532259225845337}
+2025-04-11 07:33:05,769 - csv_query_api - INFO - [01f6ebb8-eb2f-4ebd-ba8d-6ff617fcba69] Returned 1 rows
+2025-04-11 07:33:05,769 - csv_query_api - INFO - Request 3cb662e3-3e5b-4fe2-9e73-b2a9ce4d1730 completed: Status 200 - Took 1.5388 seconds
+2025-04-11 07:33:43,080 - csv_query_api - INFO - Request 1f730045-88b4-4622-86ad-66fb25470f6f started: GET /query - Client: 127.0.0.1
+2025-04-11 07:33:43,080 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Endpoint called: Query data
+2025-04-11 07:33:43,080 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Query parameters: columns='None', filters='From Bank:20', limit=20, offset=0
+2025-04-11 07:33:43,080 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Applying filters: ['From Bank:20']
+2025-04-11 07:33:43,080 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Filtering where From Bank = 20
+2025-04-11 07:33:43,082 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Applying optimized pagination strategy
+2025-04-11 07:33:43,082 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Using pre-computed row count: 179702229
+2025-04-11 07:33:43,082 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Using head strategy for pagination (no offset)
+2025-04-11 07:33:44,612 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Query completed in 1.5317 seconds
+2025-04-11 07:33:44,612 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0013728141784667969, "computation": 1.5299818515777588}
+2025-04-11 07:33:44,612 - csv_query_api - INFO - [9e22bca2-8d5c-46da-b45a-397acb9b791d] Returned 0 rows
+2025-04-11 07:33:44,612 - csv_query_api - INFO - Request 1f730045-88b4-4622-86ad-66fb25470f6f completed: Status 200 - Took 1.5325 seconds
+2025-04-11 07:33:56,578 - csv_query_api - INFO - Request 9c1a7375-e732-4986-a092-a76a0bbf09bf started: GET /query - Client: 127.0.0.1
+2025-04-11 07:33:56,580 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Endpoint called: Query data
+2025-04-11 07:33:56,581 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Query parameters: columns='None', filters='From+Bank:20', limit=20, offset=0
+2025-04-11 07:33:56,581 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Applying filters: ['From+Bank:20']
+2025-04-11 07:33:56,581 - csv_query_api - WARNING - [ef515417-f277-4511-a345-c64dea00a37e] Filter uses unknown column: From+Bank
+2025-04-11 07:33:56,581 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Applying optimized pagination strategy
+2025-04-11 07:33:56,581 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Using pre-computed row count: 179702229
+2025-04-11 07:33:56,581 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Using head strategy for pagination (no offset)
+2025-04-11 07:33:58,123 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Query completed in 1.5418 seconds
+2025-04-11 07:33:58,123 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0003120899200439453, "computation": 1.5410938262939453}
+2025-04-11 07:33:58,123 - csv_query_api - INFO - [ef515417-f277-4511-a345-c64dea00a37e] Returned 20 rows
+2025-04-11 07:33:58,123 - csv_query_api - INFO - Request 9c1a7375-e732-4986-a092-a76a0bbf09bf completed: Status 200 - Took 1.5451 seconds
+2025-04-11 07:53:07,172 - csv_query_api - INFO - Request b2a81aa2-5744-4176-84f4-ea58f25dc29b started: GET /query - Client: 127.0.0.1
+2025-04-11 07:53:07,173 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Endpoint called: Query data
+2025-04-11 07:53:07,173 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Query parameters: columns='None', filters='From+Bank:24', limit=20, offset=0
+2025-04-11 07:53:07,173 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Applying filters: ['From+Bank:24']
+2025-04-11 07:53:07,173 - csv_query_api - WARNING - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Filter uses unknown column: From+Bank
+2025-04-11 07:53:07,173 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Applying optimized pagination strategy
+2025-04-11 07:53:07,173 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Using pre-computed row count: 179702229
+2025-04-11 07:53:07,176 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Using head strategy for pagination (no offset)
+2025-04-11 07:53:08,715 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Query completed in 1.5422 seconds
+2025-04-11 07:53:08,715 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Query performance breakdown: {"column_selection": 0.0, "filtering": 7.224082946777344e-05, "computation": 1.541771650314331}
+2025-04-11 07:53:08,716 - csv_query_api - INFO - [3b236ea1-4f96-4c57-9559-e7baca5e1877] Returned 20 rows
+2025-04-11 07:53:08,716 - csv_query_api - INFO - Request b2a81aa2-5744-4176-84f4-ea58f25dc29b completed: Status 200 - Took 1.5437 seconds
+2025-04-11 07:53:38,876 - csv_query_api - INFO - Request 69169a71-2b78-4468-9159-09a4b1c51311 started: GET /query - Client: 127.0.0.1
+2025-04-11 07:53:38,877 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Endpoint called: Query data
+2025-04-11 07:53:38,877 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Query parameters: columns='None', filters='Account:800107150', limit=20, offset=0
+2025-04-11 07:53:38,877 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Applying filters: ['Account:800107150']
+2025-04-11 07:53:38,877 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Filtering where Account = 800107150
+2025-04-11 07:53:38,879 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Applying optimized pagination strategy
+2025-04-11 07:53:38,879 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Using pre-computed row count: 179702229
+2025-04-11 07:53:38,879 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Using head strategy for pagination (no offset)
+2025-04-11 07:53:40,433 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Query completed in 1.5553 seconds
+2025-04-11 07:53:40,433 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.0019621849060058594, "computation": 1.5530118942260742}
+2025-04-11 07:53:40,433 - csv_query_api - INFO - [49502eea-e2fe-409b-9bdf-5994d0163dff] Returned 1 rows
+2025-04-11 07:53:40,433 - csv_query_api - INFO - Request 69169a71-2b78-4468-9159-09a4b1c51311 completed: Status 200 - Took 1.5565 seconds
+2025-04-11 10:23:58,018 - csv_query_api - INFO - Request 62c3bb66-af04-4a3d-8fbc-bb5f0c49e4ff started: GET /query - Client: 127.0.0.1
+2025-04-11 10:23:58,019 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Endpoint called: Query data
+2025-04-11 10:23:58,019 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Query parameters: columns='None', filters='From+Bank:3196', limit=20, offset=0
+2025-04-11 10:23:58,019 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Applying filters: ['From+Bank:3196']
+2025-04-11 10:23:58,020 - csv_query_api - WARNING - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Filter uses unknown column: From+Bank
+2025-04-11 10:23:58,020 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Applying optimized pagination strategy
+2025-04-11 10:23:58,020 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Using pre-computed row count: 179702229
+2025-04-11 10:23:58,020 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Using head strategy for pagination (no offset)
+2025-04-11 10:23:59,621 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Query completed in 1.6019 seconds
+2025-04-11 10:23:59,621 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.00012803077697753906, "computation": 1.601365089416504}
+2025-04-11 10:23:59,622 - csv_query_api - INFO - [64b5bd7c-6e95-4d50-b57b-adc75fcda658] Returned 20 rows
+2025-04-11 10:23:59,622 - csv_query_api - INFO - Request 62c3bb66-af04-4a3d-8fbc-bb5f0c49e4ff completed: Status 200 - Took 1.6039 seconds
+2025-04-11 10:25:01,015 - csv_query_api - INFO - Request 2d5c7b78-1b6c-44e2-9b9e-dca86973a4a6 started: GET /query - Client: 127.0.0.1
+2025-04-11 10:25:01,020 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Endpoint called: Query data
+2025-04-11 10:25:01,020 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Query parameters: columns='None', filters='From+Bank:3196', limit=20, offset=0
+2025-04-11 10:25:01,020 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Applying filters: ['From+Bank:3196']
+2025-04-11 10:25:01,020 - csv_query_api - WARNING - [c91ef20a-e840-443a-b18d-e088e0852ed7] Filter uses unknown column: From+Bank
+2025-04-11 10:25:01,020 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Applying optimized pagination strategy
+2025-04-11 10:25:01,020 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Using pre-computed row count: 179702229
+2025-04-11 10:25:01,020 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Using head strategy for pagination (no offset)
+2025-04-11 10:25:02,576 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Query completed in 1.5561 seconds
+2025-04-11 10:25:02,576 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Query performance breakdown: {"column_selection": 0.0, "filtering": 6.008148193359375e-05, "computation": 1.5556211471557617}
+2025-04-11 10:25:02,576 - csv_query_api - INFO - [c91ef20a-e840-443a-b18d-e088e0852ed7] Returned 20 rows
+2025-04-11 10:25:02,577 - csv_query_api - INFO - Request 2d5c7b78-1b6c-44e2-9b9e-dca86973a4a6 completed: Status 200 - Took 1.5616 seconds
+2025-04-11 10:25:16,171 - csv_query_api - INFO - Request 38e5d531-70bc-4287-b089-1db0511cef86 started: GET /query - Client: 127.0.0.1
+2025-04-11 10:25:16,171 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Endpoint called: Query data
+2025-04-11 10:25:16,171 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Query parameters: columns='None', filters='From Bank:3196', limit=20, offset=0
+2025-04-11 10:25:16,171 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Applying filters: ['From Bank:3196']
+2025-04-11 10:25:16,171 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Filtering where From Bank = 3196
+2025-04-11 10:25:16,175 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Applying optimized pagination strategy
+2025-04-11 10:25:16,175 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Using pre-computed row count: 179702229
+2025-04-11 10:25:16,175 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Using head strategy for pagination (no offset)
+2025-04-11 10:25:17,709 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Query completed in 1.5380 seconds
+2025-04-11 10:25:17,709 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.003595113754272461, "computation": 1.53407883644104}
+2025-04-11 10:25:17,709 - csv_query_api - INFO - [a471c275-1e42-41c4-834f-0ae5a7da7db5] Returned 0 rows
+2025-04-11 10:25:17,709 - csv_query_api - INFO - Request 38e5d531-70bc-4287-b089-1db0511cef86 completed: Status 200 - Took 1.5388 seconds
+2025-04-11 10:25:44,125 - csv_query_api - INFO - Request 510507d9-b4fc-47d8-974a-23f13ef26d7f started: GET /query - Client: 127.0.0.1
+2025-04-11 10:25:44,125 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Endpoint called: Query data
+2025-04-11 10:25:44,125 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Query parameters: columns='None', filters='"From Bank":3196', limit=20, offset=0
+2025-04-11 10:25:44,125 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Applying filters: ['"From Bank":3196']
+2025-04-11 10:25:44,125 - csv_query_api - WARNING - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Filter uses unknown column: "From Bank"
+2025-04-11 10:25:44,125 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Applying optimized pagination strategy
+2025-04-11 10:25:44,125 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Using pre-computed row count: 179702229
+2025-04-11 10:25:44,125 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Using head strategy for pagination (no offset)
+2025-04-11 10:25:45,647 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Query completed in 1.5220 seconds
+2025-04-11 10:25:45,647 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Query performance breakdown: {"column_selection": 0.0, "filtering": 6.604194641113281e-05, "computation": 1.5214934349060059}
+2025-04-11 10:25:45,648 - csv_query_api - INFO - [b96b2de6-15aa-4c59-a62c-7f5df20974cb] Returned 20 rows
+2025-04-11 10:25:45,648 - csv_query_api - INFO - Request 510507d9-b4fc-47d8-974a-23f13ef26d7f completed: Status 200 - Took 1.5232 seconds
+2025-04-11 10:26:09,488 - csv_query_api - INFO - Request 4ef8b136-f5aa-41a6-b462-db1814ee8754 started: GET /columns - Client: 127.0.0.1
+2025-04-11 10:26:09,488 - csv_query_api - INFO - Endpoint called: Get columns
+2025-04-11 10:26:09,492 - csv_query_api - INFO - Request 4ef8b136-f5aa-41a6-b462-db1814ee8754 completed: Status 200 - Took 0.0045 seconds
+2025-04-11 10:26:19,509 - csv_query_api - INFO - Request fe9c3db7-1dd4-476a-8aa9-73a066565ca3 started: GET /query - Client: 127.0.0.1
+2025-04-11 10:26:19,509 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Endpoint called: Query data
+2025-04-11 10:26:19,509 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Query parameters: columns='None', filters='From Bank:3196', limit=20, offset=0
+2025-04-11 10:26:19,509 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Applying filters: ['From Bank:3196']
+2025-04-11 10:26:19,509 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Filtering where From Bank = 3196
+2025-04-11 10:26:19,511 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Applying optimized pagination strategy
+2025-04-11 10:26:19,511 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Using pre-computed row count: 179702229
+2025-04-11 10:26:19,511 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Using head strategy for pagination (no offset)
+2025-04-11 10:26:21,070 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Query completed in 1.5611 seconds
+2025-04-11 10:26:21,071 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Query performance breakdown: {"column_selection": 0.0, "filtering": 0.001708984375, "computation": 1.559089183807373}
+2025-04-11 10:26:21,071 - csv_query_api - INFO - [0575808d-979f-4b1e-84b5-fe50a005e92f] Returned 0 rows
+2025-04-11 10:26:21,071 - csv_query_api - INFO - Request fe9c3db7-1dd4-476a-8aa9-73a066565ca3 completed: Status 200 - Took 1.5620 seconds
+2025-04-11 10:29:54,796 - csv_query_api - INFO - Server shutting down
+2025-04-11 10:29:54,797 - csv_query_api - INFO - Closing Dask client and cluster
+2025-04-11 10:29:55,250 - csv_query_api - INFO - Dask resources released
