@@ -19,6 +19,7 @@ import boto3
 import logging
 import pandas as pd
 import dask.dataframe as dd
+import argparse
 from datetime import datetime
 from dask.distributed import Client
 from dask_cloudprovider.aws import FargateCluster
@@ -38,20 +39,37 @@ logger = logging.getLogger("dask_s3_equity_processor")
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 S3_BUCKET = os.environ.get('S3_BUCKET')
 FARGATE_CLUSTER_NAME = 'foo-cluster'
+S3_ROOT_FOLDER = os.environ.get('S3_ROOT_FOLDER', '')
 
 # Regular expression to extract date from filename (YYYYMMDD)
 DATE_PATTERN = re.compile(r'(\d{8})')
 
-def setup_fargate_cluster():
+def parse_arguments():
+    """
+    Parse command line arguments.
+    """
+    parser = argparse.ArgumentParser(description='Process equity data from S3 using Dask on AWS Fargate')
+    parser.add_argument('--bucket', type=str, help='S3 bucket name (overrides S3_BUCKET env var)')
+    parser.add_argument('--region', type=str, help='AWS region (overrides AWS_REGION env var)')
+    parser.add_argument('--root-folder', type=str, help='Root folder in S3 bucket to start search from (overrides S3_ROOT_FOLDER env var)')
+    parser.add_argument('--cluster-name', type=str, help='Fargate cluster name (overrides FARGATE_CLUSTER_NAME)')
+    
+    return parser.parse_args()
+
+def setup_fargate_cluster(cluster_name=None):
     """
     Set up a Dask cluster on AWS Fargate.
+    
+    Args:
+        cluster_name: Optional name for the Fargate cluster
     """
-    logger.info(f"Setting up Dask cluster on AWS Fargate: {FARGATE_CLUSTER_NAME}")
+    cluster_name = cluster_name or FARGATE_CLUSTER_NAME
+    logger.info(f"Setting up Dask cluster on AWS Fargate: {cluster_name}")
     
     try:
         # Create a Fargate cluster
         cluster = FargateCluster(
-            cluster_name=FARGATE_CLUSTER_NAME,
+            cluster_name=cluster_name,
             n_workers=4,  # Adjust based on your needs
             worker_cpu=1024,  # 1 vCPU
             worker_mem=4096,  # 4 GB
@@ -78,26 +96,31 @@ def setup_fargate_cluster():
         logger.error(f"Error setting up Fargate cluster: {str(e)}")
         raise
 
-def find_equity_folders(s3_client, bucket):
+def find_equity_folders(s3_client, bucket, root_folder=''):
     """
     Find all folders in S3 bucket that contain 'EQUITY' in their name.
     
     Args:
         s3_client: Boto3 S3 client
         bucket: S3 bucket name
+        root_folder: Root folder to start search from
         
     Returns:
         List of folder paths
     """
-    logger.info(f"Finding equity folders in bucket: {bucket}")
+    logger.info(f"Finding equity folders in bucket: {bucket} starting from root folder: {root_folder}")
     
-    # List all objects in the bucket
+    # Normalize root folder path
+    if root_folder and not root_folder.endswith('/'):
+        root_folder += '/'
+    
+    # List all objects in the bucket under the root folder
     paginator = s3_client.get_paginator('list_objects_v2')
     
     equity_folders = set()
     
     # Paginate through results
-    for page in paginator.paginate(Bucket=bucket):
+    for page in paginator.paginate(Bucket=bucket, Prefix=root_folder):
         if 'Contents' in page:
             for obj in page['Contents']:
                 key = obj['Key']
@@ -165,13 +188,14 @@ def get_most_recent_csv(s3_client, bucket, folder):
     
     return most_recent
 
-def load_csv_to_dask(s3_path, date_str):
+def load_csv_to_dask(s3_path, date_str, bucket):
     """
     Load a CSV file from S3 into a Dask DataFrame.
     
     Args:
         s3_path: S3 path to the CSV file
         date_str: Date string from the filename
+        bucket: S3 bucket name
         
     Returns:
         Dask DataFrame with the CSV data
@@ -179,7 +203,7 @@ def load_csv_to_dask(s3_path, date_str):
     logger.info(f"Loading CSV from S3: {s3_path}")
     
     # Construct the full S3 path
-    full_s3_path = f"s3://{S3_BUCKET}/{s3_path}"
+    full_s3_path = f"s3://{bucket}/{s3_path}"
     
     try:
         # Load the CSV file into a Dask DataFrame
@@ -263,10 +287,28 @@ def main():
     """
     Main function to process equity data from S3 using Dask on AWS Fargate.
     """
+    # Parse command line arguments
+    args = parse_arguments()
+    
+    # Override environment variables with command line arguments if provided
+    global AWS_REGION, S3_BUCKET, FARGATE_CLUSTER_NAME, S3_ROOT_FOLDER
+    
+    if args.region:
+        AWS_REGION = args.region
+    
+    if args.bucket:
+        S3_BUCKET = args.bucket
+    
+    if args.root_folder:
+        S3_ROOT_FOLDER = args.root_folder
+    
+    cluster_name = args.cluster_name or FARGATE_CLUSTER_NAME
+    
     logger.info("Starting equity data processing with Dask on AWS Fargate")
+    logger.info(f"Configuration: Region={AWS_REGION}, Bucket={S3_BUCKET}, Root Folder={S3_ROOT_FOLDER}, Cluster={cluster_name}")
     
     if not S3_BUCKET:
-        logger.error("S3_BUCKET environment variable not set")
+        logger.error("S3_BUCKET environment variable or --bucket argument not set")
         return
     
     try:
@@ -274,13 +316,13 @@ def main():
         s3_client = boto3.client('s3', region_name=AWS_REGION)
         
         # Set up Dask cluster on Fargate
-        client, cluster = setup_fargate_cluster()
+        client, cluster = setup_fargate_cluster(cluster_name)
         
         # Find equity folders
-        equity_folders = find_equity_folders(s3_client, S3_BUCKET)
+        equity_folders = find_equity_folders(s3_client, S3_BUCKET, S3_ROOT_FOLDER)
         
         if not equity_folders:
-            logger.error("No equity folders found")
+            logger.error(f"No equity folders found in {S3_BUCKET}/{S3_ROOT_FOLDER}")
             return
         
         # Get most recent CSV from each folder
@@ -301,7 +343,7 @@ def main():
         date_info = {}
         
         for i, csv_info in enumerate(csv_files):
-            df = load_csv_to_dask(csv_info['path'], csv_info['date_str'])
+            df = load_csv_to_dask(csv_info['path'], csv_info['date_str'], S3_BUCKET)
             
             if df is not None:
                 dfs.append(df)

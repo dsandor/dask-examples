@@ -32,6 +32,7 @@ export S3_BUCKET=your-s3-bucket-name
 
 # Optional (defaults shown)
 export AWS_REGION=us-east-1
+export S3_ROOT_FOLDER=  # Root folder to start search from (empty for bucket root)
 ```
 
 ## Usage
@@ -40,9 +41,21 @@ export AWS_REGION=us-east-1
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the script
+# Run the script with default settings
 python dask_s3_equity_processor.py
+
+# Or specify options via command line arguments
+python dask_s3_equity_processor.py --bucket your-bucket --root-folder data/equity --region us-west-2 --cluster-name custom-cluster
 ```
+
+## Command Line Arguments
+
+The script supports the following command line arguments:
+
+- `--bucket`: S3 bucket name (overrides S3_BUCKET environment variable)
+- `--region`: AWS region (overrides AWS_REGION environment variable)
+- `--root-folder`: Root folder in S3 bucket to start search from (overrides S3_ROOT_FOLDER environment variable)
+- `--cluster-name`: Fargate cluster name (overrides default cluster name)
 
 ## How It Works
 
