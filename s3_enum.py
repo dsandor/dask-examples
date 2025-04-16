@@ -7,6 +7,7 @@ import logging
 from typing import List, Dict, Optional
 import argparse
 import os
+import botocore
 
 # Set up logging
 logging.basicConfig(
@@ -19,7 +20,8 @@ class S3Enumerator:
     def __init__(self, bucket_name: str, root_path: str = "", include_pattern: Optional[str] = None, 
                  exclude_pattern: Optional[str] = None, download: bool = False, 
                  download_dir: Optional[str] = None):
-        self.s3_client = boto3.client('s3')
+        self.session = boto3.Session()
+        self.s3_client = self.session.client('s3')
         self.bucket_name = bucket_name
         self.root_path = root_path.rstrip('/')  # Remove trailing slash if present
         self.include_pattern = re.compile(include_pattern) if include_pattern else None
@@ -28,6 +30,24 @@ class S3Enumerator:
         self.download_dir = download_dir
         self.total_size = 0
         self.latest_files = []
+        
+        # Print credential diagnostics
+        self._print_credential_diagnostics()
+
+    def _print_credential_diagnostics(self):
+        """Print diagnostic information about AWS credentials."""
+        try:
+            credentials = self.session.get_credentials()
+            if credentials:
+                logger.info(f"Using AWS Access Key ID: {credentials.access_key[:5]}...{credentials.access_key[-5:]}")
+            
+            sts_client = self.session.client('sts')
+            identity = sts_client.get_caller_identity()
+            logger.info(f"AWS Caller Identity ARN: {identity['Arn']}")
+            logger.info(f"AWS Account: {identity['Account']}")
+            logger.info(f"AWS User ID: {identity['UserId']}")
+        except Exception as e:
+            logger.error(f"Error getting credential diagnostics: {str(e)}")
 
     def should_process_directory(self, directory: str) -> bool:
         """Check if directory should be processed based on include/exclude patterns."""
@@ -47,6 +67,15 @@ class S3Enumerator:
             self.s3_client.download_file(self.bucket_name, s3_key, local_path)
             logger.info(f"Downloaded file to: {local_path}")
             return True
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == '403':
+                logger.error(f"Access Denied (403) when downloading {s3_key}")
+                logger.error(f"Full error response: {json.dumps(e.response, indent=2)}")
+                # Print additional diagnostics for 403 errors
+                self._print_credential_diagnostics()
+            else:
+                logger.error(f"Error downloading file {s3_key}: {str(e)}")
+            return False
         except Exception as e:
             logger.error(f"Error downloading file {s3_key}: {str(e)}")
             return False
@@ -96,6 +125,15 @@ class S3Enumerator:
 
             return file_info
 
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == '403':
+                logger.error(f"Access Denied (403) when listing objects in {prefix}")
+                logger.error(f"Full error response: {json.dumps(e.response, indent=2)}")
+                # Print additional diagnostics for 403 errors
+                self._print_credential_diagnostics()
+            else:
+                logger.error(f"Error processing prefix {prefix}: {str(e)}")
+            return None
         except Exception as e:
             logger.error(f"Error processing prefix {prefix}: {str(e)}")
             return None
@@ -128,6 +166,14 @@ class S3Enumerator:
                         self.total_size += latest_file['size']
                         logger.info(f"Found latest file: {latest_file['path']} (Size: {latest_file['size']} bytes)")
 
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == '403':
+                logger.error(f"Access Denied (403) when enumerating directories")
+                logger.error(f"Full error response: {json.dumps(e.response, indent=2)}")
+                # Print additional diagnostics for 403 errors
+                self._print_credential_diagnostics()
+            else:
+                logger.error(f"Error enumerating directories: {str(e)}")
         except Exception as e:
             logger.error(f"Error enumerating directories: {str(e)}")
 
