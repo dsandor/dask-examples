@@ -16,6 +16,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Enable botocore debug logging to see the actual API endpoints
+logging.getLogger('botocore').setLevel(logging.DEBUG)
+logging.getLogger('botocore.auth').setLevel(logging.DEBUG)
+logging.getLogger('botocore.endpoint').setLevel(logging.DEBUG)
+
 class S3Enumerator:
     def __init__(self, bucket_name: str, root_path: str = "", include_pattern: Optional[str] = None, 
                  exclude_pattern: Optional[str] = None, download: bool = False, 
@@ -209,12 +214,19 @@ def main():
     parser.add_argument('--output', default='s3_enum_results.json', help='Output JSON file path')
     parser.add_argument('--download', action='store_true', help='Download the latest files')
     parser.add_argument('--download-dir', help='Directory to download files to')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging for botocore')
     
     args = parser.parse_args()
 
     # Validate download arguments
     if args.download and not args.download_dir:
         parser.error("--download-dir is required when --download is specified")
+
+    # Enable debug logging if requested
+    if args.debug:
+        logging.getLogger('botocore').setLevel(logging.DEBUG)
+        logging.getLogger('botocore.auth').setLevel(logging.DEBUG)
+        logging.getLogger('botocore.endpoint').setLevel(logging.DEBUG)
 
     enumerator = S3Enumerator(
         args.bucket, 
