@@ -15,9 +15,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class S3Enumerator:
-    def __init__(self, bucket_name: str, include_pattern: Optional[str] = None, exclude_pattern: Optional[str] = None):
+    def __init__(self, bucket_name: str, root_path: str = "", include_pattern: Optional[str] = None, exclude_pattern: Optional[str] = None):
         self.s3_client = boto3.client('s3')
         self.bucket_name = bucket_name
+        self.root_path = root_path.rstrip('/')  # Remove trailing slash if present
         self.include_pattern = re.compile(include_pattern) if include_pattern else None
         self.exclude_pattern = re.compile(exclude_pattern) if exclude_pattern else None
         self.total_size = 0
@@ -68,21 +69,26 @@ class S3Enumerator:
     def enumerate_directories(self, prefix: str = "") -> None:
         """Recursively enumerate directories and process CSV.GZ files."""
         try:
+            # Construct the full prefix including root path
+            full_prefix = f"{self.root_path}/{prefix}".lstrip('/')
+            
             paginator = self.s3_client.get_paginator('list_objects_v2')
             
             # Get all objects with the given prefix
-            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix, Delimiter='/'):
+            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=full_prefix, Delimiter='/'):
                 # Process directories
                 if 'CommonPrefixes' in page:
                     for prefix_obj in page['CommonPrefixes']:
                         directory = prefix_obj['Prefix']
-                        if self.should_process_directory(directory):
+                        # Remove root path from directory for pattern matching
+                        relative_dir = directory[len(self.root_path):].lstrip('/') if self.root_path else directory
+                        if self.should_process_directory(relative_dir):
                             logger.info(f"Processing directory: {directory}")
-                            self.enumerate_directories(directory)
+                            self.enumerate_directories(relative_dir)
 
                 # Process files in current directory
                 if 'Contents' in page:
-                    latest_file = self.get_latest_csv_gz(prefix)
+                    latest_file = self.get_latest_csv_gz(full_prefix)
                     if latest_file:
                         self.latest_files.append(latest_file)
                         self.total_size += latest_file['size']
@@ -94,6 +100,8 @@ class S3Enumerator:
     def save_results(self, output_file: str) -> None:
         """Save results to a JSON file."""
         results = {
+            'bucket': self.bucket_name,
+            'root_path': self.root_path,
             'total_size': self.total_size,
             'latest_files': self.latest_files
         }
@@ -106,13 +114,14 @@ class S3Enumerator:
 def main():
     parser = argparse.ArgumentParser(description='Enumerate S3 directories and process CSV.GZ files')
     parser.add_argument('bucket', help='S3 bucket name')
+    parser.add_argument('--root-path', default='', help='Root path within the bucket to start enumeration')
     parser.add_argument('--include', help='Regex pattern to include directories')
     parser.add_argument('--exclude', help='Regex pattern to exclude directories')
     parser.add_argument('--output', default='s3_enum_results.json', help='Output JSON file path')
     
     args = parser.parse_args()
 
-    enumerator = S3Enumerator(args.bucket, args.include, args.exclude)
+    enumerator = S3Enumerator(args.bucket, args.root_path, args.include, args.exclude)
     enumerator.enumerate_directories()
     
     logger.info(f"Total size of latest files: {enumerator.total_size} bytes")
