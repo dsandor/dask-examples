@@ -49,6 +49,24 @@ class S3Enumerator:
         except Exception as e:
             logger.error(f"Error getting credential diagnostics: {str(e)}")
 
+    def _log_403_error(self, error: botocore.exceptions.ClientError, operation: str):
+        """Log detailed information about a 403 error."""
+        logger.error(f"Access Denied (403) during {operation}")
+        logger.error(f"Full error response: {json.dumps(error.response, indent=2)}")
+        
+        # Log the SDK URL if available
+        if hasattr(error, 'response') and 'ResponseMetadata' in error.response:
+            metadata = error.response['ResponseMetadata']
+            if 'HTTPStatusCode' in metadata:
+                logger.error(f"HTTP Status Code: {metadata['HTTPStatusCode']}")
+            if 'RequestId' in metadata:
+                logger.error(f"Request ID: {metadata['RequestId']}")
+            if 'HTTPHeaders' in metadata:
+                logger.error(f"HTTP Headers: {json.dumps(metadata['HTTPHeaders'], indent=2)}")
+        
+        # Print additional diagnostics for 403 errors
+        self._print_credential_diagnostics()
+
     def should_process_directory(self, directory: str) -> bool:
         """Check if directory should be processed based on include/exclude patterns."""
         if self.exclude_pattern and self.exclude_pattern.search(directory):
@@ -69,10 +87,7 @@ class S3Enumerator:
             return True
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == '403':
-                logger.error(f"Access Denied (403) when downloading {s3_key}")
-                logger.error(f"Full error response: {json.dumps(e.response, indent=2)}")
-                # Print additional diagnostics for 403 errors
-                self._print_credential_diagnostics()
+                self._log_403_error(e, f"downloading {s3_key}")
             else:
                 logger.error(f"Error downloading file {s3_key}: {str(e)}")
             return False
@@ -127,10 +142,7 @@ class S3Enumerator:
 
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == '403':
-                logger.error(f"Access Denied (403) when listing objects in {prefix}")
-                logger.error(f"Full error response: {json.dumps(e.response, indent=2)}")
-                # Print additional diagnostics for 403 errors
-                self._print_credential_diagnostics()
+                self._log_403_error(e, f"listing objects in {prefix}")
             else:
                 logger.error(f"Error processing prefix {prefix}: {str(e)}")
             return None
@@ -168,10 +180,7 @@ class S3Enumerator:
 
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == '403':
-                logger.error(f"Access Denied (403) when enumerating directories")
-                logger.error(f"Full error response: {json.dumps(e.response, indent=2)}")
-                # Print additional diagnostics for 403 errors
-                self._print_credential_diagnostics()
+                self._log_403_error(e, "enumerating directories")
             else:
                 logger.error(f"Error enumerating directories: {str(e)}")
         except Exception as e:
