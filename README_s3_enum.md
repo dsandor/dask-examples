@@ -326,3 +326,101 @@ The code includes several parameters that can be tuned for specific use cases:
 ## License
 
 [MIT License](LICENSE)
+
+# S3 Directory Enumerator
+
+This Python script enumerates all subdirectories in an S3 bucket, finding the most recent CSV.GZ files in each directory. It supports filtering directories using regular expressions and outputs detailed information about the files found.
+
+## Features
+
+- Recursively enumerates all directories in a specified S3 bucket
+- Finds the most recent CSV.GZ file in each directory
+- Supports include/exclude patterns using regular expressions
+- Calculates total size of all latest files
+- Outputs detailed logs with timestamps
+- Generates a JSON report with file information
+
+## Prerequisites
+
+- Python 3.6+
+- AWS credentials configured (either through AWS CLI or environment variables)
+- Required Python packages:
+  - boto3
+
+## Installation
+
+1. Install the required dependencies:
+```bash
+pip install boto3
+```
+
+2. Configure AWS credentials:
+   - Using AWS CLI: `aws configure`
+   - Or set environment variables:
+     ```bash
+     export AWS_ACCESS_KEY_ID=your_access_key
+     export AWS_SECRET_ACCESS_KEY=your_secret_key
+     export AWS_DEFAULT_REGION=your_region
+     ```
+
+## Usage
+
+Basic usage:
+```bash
+python s3_enum.py your-bucket-name
+```
+
+With include/exclude patterns:
+```bash
+python s3_enum.py my-bucket --include "2023.*" --exclude "temp"
+```
+
+With custom output file:
+```bash
+python s3_enum.py my-bucket --output results.json
+```
+
+### Command Line Arguments
+
+- `bucket`: (Required) Name of the S3 bucket to enumerate
+- `--include`: (Optional) Regex pattern to include directories
+- `--exclude`: (Optional) Regex pattern to exclude directories
+- `--output`: (Optional) Output JSON file path (default: s3_enum_results.json)
+
+## Output
+
+The script generates two types of output:
+
+1. Console logs showing:
+   - Directory processing progress
+   - Found files and their sizes
+   - Total size of all latest files
+
+2. JSON file containing:
+   ```json
+   {
+     "total_size": 1234567,
+     "latest_files": [
+       {
+         "path": "s3://bucket-name/path/to/file.csv.gz",
+         "size": 123456,
+         "last_modified": "2024-03-21T12:34:56.789Z"
+       },
+       ...
+     ]
+   }
+   ```
+
+## Error Handling
+
+The script includes comprehensive error handling:
+- Logs errors for individual file/directory processing failures
+- Continues processing even if individual operations fail
+- Provides detailed error messages in the logs
+
+## Notes
+
+- The script uses pagination to handle large buckets efficiently
+- File dates are determined by the LastModified timestamp in S3
+- The script processes up to 1000 objects per directory (configurable via MaxKeys)
+- All paths in the output are in the format `s3://bucket-name/path/to/file.csv.gz`
