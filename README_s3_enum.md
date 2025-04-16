@@ -336,6 +336,8 @@ This Python script enumerates all subdirectories in an S3 bucket, finding the mo
 - Recursively enumerates all directories in a specified S3 bucket
 - Finds the most recent CSV.GZ file in each directory
 - Supports include/exclude patterns using regular expressions
+- Allows specifying a root path within the bucket
+- Optional file downloading with preserved directory structure
 - Calculates total size of all latest files
 - Outputs detailed logs with timestamps
 - Generates a JSON report with file information
@@ -370,9 +372,24 @@ Basic usage:
 python s3_enum.py your-bucket-name
 ```
 
+With root path:
+```bash
+python s3_enum.py my-bucket --root-path "path/to/start"
+```
+
 With include/exclude patterns:
 ```bash
 python s3_enum.py my-bucket --include "2023.*" --exclude "temp"
+```
+
+With file downloading:
+```bash
+python s3_enum.py my-bucket --download --download-dir ./downloaded_files
+```
+
+Combined usage:
+```bash
+python s3_enum.py my-bucket --root-path "BBUpload/Foo" --download --download-dir ./data
 ```
 
 With custom output file:
@@ -383,9 +400,12 @@ python s3_enum.py my-bucket --output results.json
 ### Command Line Arguments
 
 - `bucket`: (Required) Name of the S3 bucket to enumerate
+- `--root-path`: (Optional) Root path within the bucket to start enumeration
 - `--include`: (Optional) Regex pattern to include directories
 - `--exclude`: (Optional) Regex pattern to exclude directories
 - `--output`: (Optional) Output JSON file path (default: s3_enum_results.json)
+- `--download`: (Optional) Flag to enable file downloading
+- `--download-dir`: (Required if --download is used) Directory to download files to
 
 ## Output
 
@@ -394,27 +414,43 @@ The script generates two types of output:
 1. Console logs showing:
    - Directory processing progress
    - Found files and their sizes
+   - Download progress (if enabled)
    - Total size of all latest files
 
 2. JSON file containing:
    ```json
    {
+     "bucket": "bucket-name",
+     "root_path": "path/to/start",
      "total_size": 1234567,
      "latest_files": [
        {
          "path": "s3://bucket-name/path/to/file.csv.gz",
          "size": 123456,
-         "last_modified": "2024-03-21T12:34:56.789Z"
+         "last_modified": "2024-03-21T12:34:56.789Z",
+         "s3_key": "path/to/file.csv.gz",
+         "local_path": "./downloaded_files/path/to/file.csv.gz"
        },
        ...
      ]
    }
    ```
 
+## Directory Structure Preservation
+
+When downloading files:
+- The script preserves the directory structure from S3
+- The root path is excluded from the local directory structure
+- Example:
+  - S3 path: `s3://bucket/BBUpload/Foo/bar/file.csv.gz`
+  - Root path: `BBUpload/Foo`
+  - Local path: `./downloaded_files/bar/file.csv.gz`
+
 ## Error Handling
 
 The script includes comprehensive error handling:
 - Logs errors for individual file/directory processing failures
+- Logs download failures without stopping the process
 - Continues processing even if individual operations fail
 - Provides detailed error messages in the logs
 
@@ -424,3 +460,5 @@ The script includes comprehensive error handling:
 - File dates are determined by the LastModified timestamp in S3
 - The script processes up to 1000 objects per directory (configurable via MaxKeys)
 - All paths in the output are in the format `s3://bucket-name/path/to/file.csv.gz`
+- The root path parameter allows you to limit enumeration to a specific directory within the bucket
+- Downloaded files maintain the same directory structure as in S3, excluding the root path

@@ -6,6 +6,7 @@ from pathlib import Path
 import logging
 from typing import List, Dict, Optional
 import argparse
+import os
 
 # Set up logging
 logging.basicConfig(
@@ -15,12 +16,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class S3Enumerator:
-    def __init__(self, bucket_name: str, root_path: str = "", include_pattern: Optional[str] = None, exclude_pattern: Optional[str] = None):
+    def __init__(self, bucket_name: str, root_path: str = "", include_pattern: Optional[str] = None, 
+                 exclude_pattern: Optional[str] = None, download: bool = False, 
+                 download_dir: Optional[str] = None):
         self.s3_client = boto3.client('s3')
         self.bucket_name = bucket_name
         self.root_path = root_path.rstrip('/')  # Remove trailing slash if present
         self.include_pattern = re.compile(include_pattern) if include_pattern else None
         self.exclude_pattern = re.compile(exclude_pattern) if exclude_pattern else None
+        self.download = download
+        self.download_dir = download_dir
         self.total_size = 0
         self.latest_files = []
 
@@ -31,6 +36,20 @@ class S3Enumerator:
         if self.include_pattern and not self.include_pattern.search(directory):
             return False
         return True
+
+    def download_file(self, s3_key: str, local_path: str) -> bool:
+        """Download a file from S3 to the local filesystem."""
+        try:
+            # Create the directory structure if it doesn't exist
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # Download the file
+            self.s3_client.download_file(self.bucket_name, s3_key, local_path)
+            logger.info(f"Downloaded file to: {local_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error downloading file {s3_key}: {str(e)}")
+            return False
 
     def get_latest_csv_gz(self, prefix: str) -> Optional[Dict]:
         """Get the most recent CSV.GZ file in the given prefix."""
@@ -56,11 +75,26 @@ class S3Enumerator:
             # Sort by last modified date, most recent first
             latest_file = max(csv_files, key=lambda x: x['LastModified'])
             
-            return {
+            file_info = {
                 'path': f"s3://{self.bucket_name}/{latest_file['Key']}",
                 'size': latest_file['Size'],
-                'last_modified': latest_file['LastModified'].isoformat()
+                'last_modified': latest_file['LastModified'].isoformat(),
+                's3_key': latest_file['Key']
             }
+
+            # Download the file if requested
+            if self.download and self.download_dir:
+                # Remove root path from the key to maintain relative structure
+                relative_key = latest_file['Key']
+                if self.root_path:
+                    relative_key = relative_key[len(self.root_path):].lstrip('/')
+                
+                # Construct local path
+                local_path = os.path.join(self.download_dir, relative_key)
+                file_info['local_path'] = local_path
+                self.download_file(latest_file['Key'], local_path)
+
+            return file_info
 
         except Exception as e:
             logger.error(f"Error processing prefix {prefix}: {str(e)}")
@@ -118,10 +152,23 @@ def main():
     parser.add_argument('--include', help='Regex pattern to include directories')
     parser.add_argument('--exclude', help='Regex pattern to exclude directories')
     parser.add_argument('--output', default='s3_enum_results.json', help='Output JSON file path')
+    parser.add_argument('--download', action='store_true', help='Download the latest files')
+    parser.add_argument('--download-dir', help='Directory to download files to')
     
     args = parser.parse_args()
 
-    enumerator = S3Enumerator(args.bucket, args.root_path, args.include, args.exclude)
+    # Validate download arguments
+    if args.download and not args.download_dir:
+        parser.error("--download-dir is required when --download is specified")
+
+    enumerator = S3Enumerator(
+        args.bucket, 
+        args.root_path, 
+        args.include, 
+        args.exclude,
+        args.download,
+        args.download_dir
+    )
     enumerator.enumerate_directories()
     
     logger.info(f"Total size of latest files: {enumerator.total_size} bytes")
