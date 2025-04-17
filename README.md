@@ -1,259 +1,243 @@
-# DuckDB S3 Query API
+# DuckDB S3 Query System
 
-A Docker-based service that provides a REST API for querying gzipped CSV files stored in Amazon S3 using DuckDB. This service allows you to run SQL queries against your S3 data without downloading it first.
+A distributed query system that allows you to load and query data from S3 using DuckDB. The system consists of two types of containers:
+1. Data Containers - Load and serve data from S3
+2. Distributed Query Server - Join and query data across multiple data containers
 
 ## Features
 
-- Query gzipped CSV files directly from S3
-- REST API interface with FastAPI
-- Interactive API documentation (Swagger UI and ReDoc)
-- AWS credentials management via environment variables
-- Secure container configuration
-- Support for all DuckDB SQL features
-- JSON request/response format
-- Error handling with proper HTTP status codes
-- Dataset metadata endpoint
+- Load gzipped CSV files from S3 into memory for fast querying
+- Custom table names for each data container
+- Distributed querying across multiple data containers
+- Automatic query parsing and execution
+- Performance metrics and timing information
+- REST API interface with OpenAPI documentation
 
 ## Prerequisites
 
 - Docker
-- AWS S3 bucket with gzipped CSV files
-- AWS credentials configured via environment variables or IAM roles
+- AWS credentials (for S3 access)
+- Python 3.9+ (for local development)
 
-## AWS Credentials
+## Building the Containers
 
-The service uses standard AWS environment variables for authentication. There are several ways to provide these credentials to the container:
-
-### 1. Using System AWS Credentials
-
-If you have AWS credentials configured on your system (e.g., through `aws configure`), you can map them directly to the container:
+### Data Container
 
 ```bash
-# Using AWS credentials file
-docker run -p 8000:8000 \
-  --env-file ~/.aws/credentials \
-  duckdb-s3-query \
-  s3://your-bucket/your-file.csv.gz
-
-# Or using environment variables from your shell
-docker run -p 8000:8000 \
-  -e AWS_ACCESS_KEY_ID \
-  -e AWS_SECRET_ACCESS_KEY \
-  -e AWS_SESSION_TOKEN \
-  -e AWS_DEFAULT_REGION \
-  duckdb-s3-query \
-  s3://your-bucket/your-file.csv.gz
+# Build the data container image
+docker build -t duckdb-s3-query -f Dockerfile .
 ```
 
-### 2. Using AWS CLI Profile
-
-If you have multiple AWS profiles configured:
+### Distributed Query Server
 
 ```bash
-# Create a temporary credentials file from your profile
-aws configure export-credentials --profile your-profile > /tmp/aws-creds
-
-# Run the container with the temporary credentials
-docker run -p 8000:8000 \
-  --env-file /tmp/aws-creds \
-  duckdb-s3-query \
-  s3://your-bucket/your-file.csv.gz
-
-# Clean up
-rm /tmp/aws-creds
+# Build the distributed query server image
+docker build -t duckdb-distributed-query -f Dockerfile.distributed .
 ```
 
-### 3. Using AWS IAM Roles
+## Configuration
 
-When running on AWS infrastructure (e.g., EC2, ECS, EKS), you can use IAM roles:
+Create a `config.json` file to map table names to data container URLs and ports:
 
-```bash
-# No need to pass credentials - the container will use the instance's IAM role
-docker run -p 8000:8000 \
-  duckdb-s3-query \
-  s3://your-bucket/your-file.csv.gz
+```json
+{
+    "tables": {
+        "labels": {
+            "url": "http://localhost",
+            "port": 8001,
+            "table_name": "labels"
+        },
+        "label_sublabels": {
+            "url": "http://localhost",
+            "port": 8002,
+            "table_name": "label_sublabels"
+        },
+        "label_urls": {
+            "url": "http://localhost",
+            "port": 8003,
+            "table_name": "label_urls"
+        }
+    }
+}
 ```
 
-## Building the Docker Image
+## Running the System
+
+### Port Configuration
+
+The system uses Uvicorn as the underlying web server. When running in Docker, you need to map the container's internal port to your desired external port. The internal port is always 8000, but you can map it to any external port you want.
+
+For example, to run a data container on port 8001:
 
 ```bash
-docker build -t duckdb-s3-query .
-```
-
-## Running the Container
-
-Basic usage with environment variables:
-```bash
-docker run -p 8000:8000 \
+docker run -d \
+  -p 8001:8000 \  # Maps external port 8001 to internal port 8000
   -e AWS_ACCESS_KEY_ID=your_access_key \
   -e AWS_SECRET_ACCESS_KEY=your_secret_key \
-  -e AWS_DEFAULT_REGION=your_region \
   duckdb-s3-query \
-  s3://your-bucket/your-file.csv.gz
+  s3://your-bucket/data.csv.gz \
+  --table-name my_table
 ```
 
-Example files:
+### 1. Start Data Containers
 
-```
-s3://test-data-dsandor/discogs_20250401_labels.csv.gz
-```
+Each data container needs to run on a different port. Here's how to start them:
 
-```
-s3://test-data-dsandor/discogs_20250401_artists.csv.gz
-```
-
-### Command Line Arguments
-
-- `s3_url`: (Required) S3 URL of the gzipped CSV file (format: s3://bucket/key)
-- `--region`: AWS Region (default: us-east-1)
-- `--host`: Host to bind the server to (default: 0.0.0.0)
-- `--port`: Port to bind the server to (default: 8000)
-
-## API Usage
-
-### Interactive Documentation
-
-The service provides two interactive documentation interfaces:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### API Endpoints
-
-#### 1. Health Check
 ```bash
+# Start the first data container (labels)
+docker run -d \
+  -p 8001:8000 \  # Maps external port 8001 to internal port 8000
+  -e AWS_ACCESS_KEY_ID=your_access_key \
+  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
+  duckdb-s3-query \
+  s3://your-bucket/labels.csv.gz \
+  --table-name labels
+
+# Start the second data container (label_sublabels)
+docker run -d \
+  -p 8002:8000 \  # Maps external port 8002 to internal port 8000
+  -e AWS_ACCESS_KEY_ID=your_access_key \
+  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
+  duckdb-s3-query \
+  s3://your-bucket/label_sublabels.csv.gz \
+  --table-name label_sublabels
+
+# Start the third data container (label_urls)
+docker run -d \
+  -p 8003:8000 \  # Maps external port 8003 to internal port 8000
+  -e AWS_ACCESS_KEY_ID=your_access_key \
+  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
+  duckdb-s3-query \
+  s3://your-bucket/label_urls.csv.gz \
+  --table-name label_urls
+```
+
+### 2. Start the Distributed Query Server
+
+```bash
+# Start the distributed query server
+docker run -d \
+  -p 8000:8000 \  # Maps external port 8000 to internal port 8000
+  -v $(pwd)/config.json:/app/config.json \
+  duckdb-distributed-query
+```
+
+## Usage Examples
+
+### 1. Query a Single Table
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "SELECT * FROM labels LIMIT 5"
+  }'
+```
+
+### 2. Join Multiple Tables
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "SELECT l.label_id, l.name, ls.sublabel_id, lu.url FROM labels l JOIN label_sublabels ls ON l.label_id = ls.label_id JOIN label_urls lu ON ls.sublabel_id = lu.sublabel_id WHERE l.name LIKE '\''%test%'\''"
+  }'
+```
+
+### 3. Get Metadata
+
+```bash
+# Get metadata from a data container
+curl http://localhost:8001/metadata
+
+# Get available tables from distributed server
 curl http://localhost:8000/
 ```
-Response:
+
+## API Documentation
+
+Once the servers are running, you can access the API documentation at:
+- Data Containers: `http://localhost:8001/docs` (or respective port)
+- Distributed Server: `http://localhost:8000/docs`
+
+## Response Format
+
+### Query Response
+
 ```json
 {
-    "message": "DuckDB S3 Query API is running",
-    "docs_url": "/docs",
-    "redoc_url": "/redoc"
+  "results": [
+    {
+      "label_id": 1,
+      "name": "test_label",
+      "sublabel_id": 100,
+      "url": "http://example.com"
+    }
+  ],
+  "columns": ["label_id", "name", "sublabel_id", "url"],
+  "execution_time_ms": 123.45,
+  "timestamp": "2024-03-14T12:34:56.789Z",
+  "source_tables": ["labels", "label_sublabels", "label_urls"]
 }
 ```
 
-#### 2. Dataset Metadata
-```bash
-curl http://localhost:8000/metadata
-```
-Response:
+### Metadata Response
+
 ```json
 {
-    "s3_url": "s3://your-bucket/your-file.csv.gz",
-    "view_name": "s3_data",
-    "columns": [
-        {
-            "name": "column1",
-            "type": "VARCHAR"
-        },
-        {
-            "name": "column2",
-            "type": "INTEGER"
-        }
-    ],
-    "row_count": 1000,
-    "column_count": 2,
-    "size_bytes": 50000
+  "s3_url": "s3://your-bucket/data.csv.gz",
+  "view_name": "labels",
+  "columns": [
+    {
+      "name": "label_id",
+      "type": "BIGINT"
+    },
+    {
+      "name": "name",
+      "type": "VARCHAR"
+    }
+  ],
+  "row_count": 1000000,
+  "column_count": 2,
+  "size_bytes": 15000000,
+  "load_time_ms": 1234.56,
+  "timestamp": "2024-03-14T12:34:56.789Z"
 }
 ```
 
-#### 3. Execute Query
-```bash
-curl -X POST "http://localhost:8000/query" \
-     -H "Content-Type: application/json" \
-     -d '{"query": "SELECT * FROM s3_data LIMIT 5"}'
-```
+## Performance Considerations
 
-Response format:
-```json
-{
-    "results": [
-        {"column1": "value1", "column2": "value2", ...},
-        ...
-    ],
-    "columns": ["column1", "column2", ...]
-}
-```
-
-### Query Examples
-
-1. Basic SELECT with LIMIT:
-```sql
-SELECT * FROM s3_data LIMIT 5
-```
-
-2. Filtering data:
-```sql
-SELECT * FROM s3_data WHERE column1 = 'value' LIMIT 10
-```
-
-3. Aggregation:
-```sql
-SELECT column1, COUNT(*) as count 
-FROM s3_data 
-GROUP BY column1 
-ORDER BY count DESC 
-LIMIT 5
-```
-
-4. Complex queries:
-```sql
-WITH filtered_data AS (
-    SELECT * FROM s3_data 
-    WHERE column1 > 100
-)
-SELECT 
-    column2,
-    AVG(column3) as avg_value,
-    COUNT(*) as record_count
-FROM filtered_data
-GROUP BY column2
-HAVING COUNT(*) > 10
-ORDER BY avg_value DESC
-LIMIT 10
-```
-
-## Security Considerations
-
-1. The container runs as a non-root user for enhanced security
-2. AWS credentials are handled securely through environment variables
-3. The API doesn't store any data permanently - all queries are executed against the in-memory DuckDB instance
-4. The container exposes only port 8000 by default
-5. AWS credentials can be managed through Docker secrets or environment variables
-6. Consider using IAM roles when running on AWS infrastructure
-7. When using `--env-file`, ensure the credentials file has appropriate permissions (600)
+1. Data containers load the entire dataset into memory for fast querying
+2. The distributed query server:
+   - Fetches only required columns from each data container
+   - Uses temporary tables for efficient joining
+   - Cleans up temporary tables after query execution
+3. All operations include timing metrics for monitoring performance
 
 ## Error Handling
 
-The API returns appropriate HTTP status codes and error messages:
-
-- 400: Bad Request (invalid query syntax, etc.)
-- 500: Internal Server Error (database connection issues, etc.)
-
-Example error response:
-```json
-{
-    "detail": "Error message describing what went wrong"
-}
-```
+The system provides detailed error messages for:
+- Invalid table names
+- Missing tables in configuration
+- Query syntax errors
+- S3 access issues
+- Connection problems between containers
 
 ## Development
 
-The project consists of two main files:
+For local development:
 
-1. `Dockerfile`: Defines the container environment
-   - Uses Python 3.9 slim as base image
-   - Installs required system and Python packages
-   - Sets up security configurations
-   - Exposes port 8000
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-2. `query_s3.py`: The main application
-   - FastAPI web server
-   - DuckDB integration
-   - S3 file handling
-   - Query execution
-   - Error handling
+# Run a data container
+python query_s3.py s3://your-bucket/data.csv.gz --table-name my_table
 
-## Contributing
+# Run the distributed query server
+python distributed_query.py --config config.json
+```
 
-Feel free to submit issues and enhancement requests!
+## License
+
+MIT License
