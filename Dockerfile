@@ -29,6 +29,11 @@ ENV PYTHONUNBUFFERED=1
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser
+
+# Create cache directory and set permissions
+RUN mkdir -p /data/cache && chown -R appuser:appuser /data
+
+# Switch to non-root user
 USER appuser
 
 # Expose the port
