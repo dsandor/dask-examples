@@ -3,12 +3,14 @@
         "labels": {
             "url": "http://192.168.1.142",
             "port": 8001,
-            "table_name": "labels"
+            "table_name": "labels",
+            "filename":  "discogs_20250401_labels.csv.gz"
         },
         "artists": {
             "url": "http://192.168.1.142",
             "port": 8002,
-            "table_name": "artists"
+            "table_name": "artists",
+            "filename":  "discogs_20250401_artists.csv.gz"
         }
     }
 } 
