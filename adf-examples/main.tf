@@ -43,8 +43,8 @@ resource "azurerm_storage_account" "storage" {
 
 # Create a storage container
 resource "azurerm_storage_container" "container" {
-  name                  = "adf-example-bucket"
-  storage_account_name  = azurerm_storage_account.storage.name
+  name                 = var.storage_container_name
+  storage_account_name = azurerm_storage_account.storage.name
   container_access_type = "private"
 }
 
@@ -103,57 +103,70 @@ resource "azurerm_data_factory" "adf" {
 
 # Create a linked service for Key Vault
 resource "azurerm_data_factory_linked_service_key_vault" "kv_link" {
-  name              = "KeyVaultLinkedService"
-  data_factory_id   = azurerm_data_factory.adf.id
-  key_vault_id      = azurerm_key_vault.kv.id
+  name            = "KeyVaultLinkedService"
+  data_factory_id = azurerm_data_factory.adf.id
+  key_vault_id    = azurerm_key_vault.kv.id
 }
 
 # Create a linked service for SFTP
 resource "azurerm_data_factory_linked_service_sftp" "sftp_link" {
-  name              = "SftpLinkedService"
-  data_factory_id   = azurerm_data_factory.adf.id
+  name                = "SftpLinkedService"
+  data_factory_id     = azurerm_data_factory.adf.id
   authentication_type = "Basic"
-  host              = "fake-sftp.example.com"
-  port              = 22
-  username          = "@{linkedService().KeyVault.getSecret('sftp-username')}"
-  password          = "@{linkedService().KeyVault.getSecret('sftp-password')}"
-  
-  key_vault_password {
-    linked_service_name = azurerm_data_factory_linked_service_key_vault.kv_link.name
-    secret_name         = "sftp-password"
-  }
+  host                = var.sftp_host
+  port                = var.sftp_port
+  username            = azurerm_key_vault_secret.sftp_username.value
+  password            = azurerm_key_vault_secret.sftp_password.value
 }
 
 # Create a linked service for Azure Blob Storage
 resource "azurerm_data_factory_linked_service_azure_blob_storage" "blob_link" {
-  name              = "BlobStorageLinkedService"
-  data_factory_id   = azurerm_data_factory.adf.id
+  name            = "BlobStorageLinkedService"
+  data_factory_id = azurerm_data_factory.adf.id
   connection_string = azurerm_storage_account.storage.primary_connection_string
 }
 
-# Create a dataset for SFTP source
-resource "azurerm_data_factory_dataset_binary" "sftp_dataset" {
-  name                = "SftpSourceDataset"
-  data_factory_id     = azurerm_data_factory.adf.id
-  linked_service_name = azurerm_data_factory_linked_service_sftp.sftp_link.name
-  
-  sftp_server_location {
-    folder_path = "/upload/"
-    file_name   = "*.csv"
+# Create a custom dataset for SFTP source
+resource "azurerm_data_factory_custom_dataset" "sftp_dataset" {
+  name            = "SftpSourceDataset"
+  data_factory_id = azurerm_data_factory.adf.id
+  type            = "Binary"
+
+  linked_service {
+    name = azurerm_data_factory_linked_service_sftp.sftp_link.name
+  }
+
+  type_properties_json = <<JSON
+{
+  "location": {
+    "type": "SftpLocation",
+    "folderPath": "${var.sftp_path}",
+    "fileName": "${var.sftp_file_pattern}"
   }
 }
+JSON
+}
 
-# Create a dataset for Blob Storage destination
-resource "azurerm_data_factory_dataset_binary" "blob_dataset" {
-  name                = "BlobDestinationDataset"
-  data_factory_id     = azurerm_data_factory.adf.id
-  linked_service_name = azurerm_data_factory_linked_service_azure_blob_storage.blob_link.name
-  
-  azure_blob_storage_location {
-    container = azurerm_storage_container.container.name
-    path      = "sftp-data/"
-    filename  = "{filename}"
+# Create a custom dataset for Blob Storage destination
+resource "azurerm_data_factory_custom_dataset" "blob_dataset" {
+  name            = "BlobDestinationDataset"
+  data_factory_id = azurerm_data_factory.adf.id
+  type            = "Binary"
+
+  linked_service {
+    name = azurerm_data_factory_linked_service_azure_blob_storage.blob_link.name
   }
+
+  type_properties_json = <<JSON
+{
+  "location": {
+    "type": "AzureBlobStorageLocation",
+    "container": "${var.storage_container_name}",
+    "folderPath": "${var.storage_destination_path}",
+    "fileName": "{filename}"
+  }
+}
+JSON
 }
 
 # Create a pipeline to copy data from SFTP to Blob Storage
@@ -181,8 +194,7 @@ resource "azurerm_data_factory_pipeline" "copy_pipeline" {
         "storeSettings": {
           "type": "SftpReadSettings",
           "recursive": true,
-          "wildcardFileName": "*.csv",
-          "preserveZipFileNameAsFolder": false
+          "wildcardFileName": "${var.sftp_file_pattern}"
         },
         "formatSettings": {
           "type": "BinaryReadSettings"
@@ -198,13 +210,13 @@ resource "azurerm_data_factory_pipeline" "copy_pipeline" {
     },
     "inputs": [
       {
-        "referenceName": "${azurerm_data_factory_dataset_binary.sftp_dataset.name}",
+        "referenceName": "${azurerm_data_factory_custom_dataset.sftp_dataset.name}",
         "type": "DatasetReference"
       }
     ],
     "outputs": [
       {
-        "referenceName": "${azurerm_data_factory_dataset_binary.blob_dataset.name}",
+        "referenceName": "${azurerm_data_factory_custom_dataset.blob_dataset.name}",
         "type": "DatasetReference"
       }
     ]
