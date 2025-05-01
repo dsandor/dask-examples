@@ -12,6 +12,7 @@ import uvicorn
 import duckdb
 import pandas as pd
 import logging
+import asyncio
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -249,6 +250,8 @@ class DistributedQueryServer:
         # Create temporary tables for each data source with filtered data
         temp_tables = []
         try:
+            # Prepare all remote queries first
+            remote_queries = []
             for table in tables:
                 container = self.config.tables[table]
                 temp_table = f"temp_{table}"
@@ -265,21 +268,21 @@ class DistributedQueryServer:
                 
                 # Create a remote query that includes the WHERE clause
                 remote_query = f"SELECT * FROM {container.table_name}{where_clause}"
-                logger.info(f"Forwarding query to container: {remote_query}")
-                
-                # Ensure URL doesn't have double http:// prefix
-                base_url = container.url
-                if base_url.startswith(('http://', 'https://')):
-                    logger.info(f"Connecting to container at: {base_url}:{container.port}")
-                else:
-                    logger.info(f"Connecting to container at: http://{base_url}:{container.port}")
-                
-                # Execute the remote query and create a temporary table from the results
-                df = await self._execute_remote_query(table, remote_query)
-                
+                remote_queries.append((table, remote_query))
+            
+            # Execute all remote queries in parallel
+            async def execute_remote_query_wrapper(table_query):
+                table, query = table_query
+                return table, await self._execute_remote_query(table, query)
+            
+            # Execute all queries concurrently
+            results = await asyncio.gather(*[execute_remote_query_wrapper(q) for q in remote_queries])
+            
+            # Process results and create temporary tables
+            for table, df in results:
+                temp_table = f"temp_{table}"
                 # Register the DataFrame as a table in DuckDB
                 self.conn.register(f"df_{temp_table}", df)
-                
                 # Create the temporary table from the DataFrame
                 self.conn.execute(f"CREATE TABLE {temp_table} AS SELECT * FROM df_{temp_table}")
             
@@ -299,7 +302,6 @@ class DistributedQueryServer:
             # Build the final query using temporary table names
             optimized_query = f"SELECT * FROM {temp_tables[0]}{join_clause}{remaining_where}"
             
-            # Return the query and temp tables
             return optimized_query, temp_tables
         except Exception as e:
             # Clean up any tables we created if there was an error
