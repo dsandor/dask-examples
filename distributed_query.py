@@ -140,12 +140,15 @@ class DistributedQueryServer:
         """Execute a query on a remote data container."""
         table_config = self.config.tables[table]
         
-        # Ensure URL has http:// prefix
+        # Ensure URL has http:// prefix but avoid double prefixes
         base_url = table_config.url
-        if not base_url.startswith(('http://', 'https://')):
-            base_url = f"http://{base_url}"
+        if base_url.startswith(('http://', 'https://')):
+            # URL already has a prefix, use it as is
+            url = f"{base_url}:{table_config.port}/query"
+        else:
+            # URL needs a prefix
+            url = f"http://{base_url}:{table_config.port}/query"
         
-        url = f"{base_url}:{table_config.port}/query"
         logger.info(f"Executing remote query on {url}: {query}")
         
         try:
@@ -206,18 +209,40 @@ class DistributedQueryServer:
             
             for condition in where_parts:
                 condition = condition.strip()
-                assigned = False
                 
-                # Check if condition references a specific table
-                for table in tables:
-                    if table + '.' in condition or condition.split()[0] in table_metadata[table].get('columns', []):
-                        table_where_conditions[table].append(condition)
-                        assigned = True
-                        break
-                
-                # If not assigned to a specific table, it might be a common condition
-                if not assigned:
-                    common_where_conditions.append(condition)
+                # For simple equality conditions like id_bb_global='BBG000B9XB24',
+                # apply to all tables that have that column
+                column_match = re.match(r'([\w._]+)\s*=\s*(.+)', condition)
+                if column_match:
+                    column_name = column_match.group(1)
+                    # Remove table prefix if present
+                    if '.' in column_name:
+                        _, column_name = column_name.split('.', 1)
+                    
+                    # Add this condition to all tables that have this column
+                    condition_assigned = False
+                    for table in tables:
+                        # Check if this table has this column
+                        table_columns = [col.get('name', '').lower() for col in table_metadata[table].get('columns', [])]
+                        if column_name.lower() in table_columns:
+                            table_where_conditions[table].append(condition)
+                            condition_assigned = True
+                    
+                    # If we couldn't assign it to any table, add it as a common condition
+                    if not condition_assigned:
+                        common_where_conditions.append(condition)
+                else:
+                    # For more complex conditions, try to determine if they reference a specific table
+                    assigned = False
+                    for table in tables:
+                        if table + '.' in condition:
+                            table_where_conditions[table].append(condition)
+                            assigned = True
+                            break
+                    
+                    # If not assigned to a specific table, it's a common condition
+                    if not assigned:
+                        common_where_conditions.append(condition)
         
         # Create temporary tables for each data source with filtered data
         temp_tables = []
@@ -239,7 +264,13 @@ class DistributedQueryServer:
                 # Create a remote query that includes the WHERE clause
                 remote_query = f"SELECT * FROM {container.table_name}{where_clause}"
                 logger.info(f"Forwarding query to container: {remote_query}")
-                logger.info(f"Connecting to container at: http://{container.url}:{container.port}")
+                
+                # Ensure URL doesn't have double http:// prefix
+                base_url = container.url
+                if base_url.startswith(('http://', 'https://')):
+                    logger.info(f"Connecting to container at: {base_url}:{container.port}")
+                else:
+                    logger.info(f"Connecting to container at: http://{base_url}:{container.port}")
                 
                 # Execute the remote query and create a temporary table from the results
                 df = await self._execute_remote_query(table, remote_query)
@@ -247,11 +278,9 @@ class DistributedQueryServer:
                 # Register the DataFrame as a table in DuckDB
                 self.conn.register(f"df_{temp_table}", df)
                 
-                # Create the temporary table from the DataFrame
-                self.conn.execute(f"""
-                    CREATE TABLE {temp_table} AS 
-                    SELECT * FROM df_{temp_table}
-                """)
+                # Create the temporary table from the DataFrame - use a single-line query
+                # to avoid DuckDB parsing issues
+                self.conn.execute(f"CREATE TABLE {temp_table} AS SELECT * FROM df_{temp_table}")
             
             # Build optimized query with the remaining WHERE conditions
             remaining_where = ""
@@ -263,11 +292,9 @@ class DistributedQueryServer:
             for i, (temp, cond) in enumerate(zip(temp_tables[1:], join_conditions)):
                 join_clause += f" JOIN {temp} ON {cond}"
             
-            optimized_query = f"""
-                SELECT * FROM {temp_tables[0]}
-                {join_clause}
-                {remaining_where}
-            """
+            # Build the final query as a single string without multi-line formatting
+            # to avoid DuckDB parsing issues
+            optimized_query = f"SELECT * FROM {temp_tables[0]} {join_clause} {remaining_where}"
             
             # Return the query and temp tables, but don't drop the tables yet
             # The caller will execute the query and then clean up
