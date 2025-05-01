@@ -15,6 +15,7 @@ import uvicorn
 from typing import Optional, List, Dict
 import logging
 import pathlib
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -226,11 +227,6 @@ def setup_duckdb(url: str, table_name: str) -> None:
     # Enable query logging and progress bar
     conn.execute("SET enable_progress_bar=true")
     
-    # Set case-sensitive string comparison for literals
-    conn.execute("SET preserve_identifier_case=true")
-    conn.execute("SET preserve_input_case=true")
-    conn.execute("SET default_null_order='nulls_first'")
-    
     # Create a view that will lazily load the data from local cache only
     logger.info(f"Creating lazy-loaded view from local cache: {local_cache_path}")
     
@@ -300,7 +296,13 @@ async def execute_query(query_request: QueryRequest):
         
         # Execute the query with lazy loading from local cache
         logger.debug(f"Executing DuckDB query: {query_request.query}")
-        result = conn.execute(query_request.query).fetchdf()
+        
+        # Preserve case in string literals by using parameterized queries
+        query, params = extract_string_literals(query_request.query)
+        logger.debug(f"Parameterized query: {query}")
+        logger.debug(f"Parameters: {params}")
+        
+        result = conn.execute(query, params).fetchdf()
         logger.debug(f"Query returned {len(result)} rows")
         
         # Convert results to list of dictionaries
@@ -322,6 +324,38 @@ async def execute_query(query_request: QueryRequest):
     except Exception as e:
         logger.error(f"Error executing query: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+def extract_string_literals(sql_query):
+    """
+    Extract string literals from SQL query and replace them with placeholders.
+    Returns a tuple of (modified_query, parameters).
+    
+    This preserves case sensitivity in string literals by using parameterized queries.
+    """
+    # Regular expression to match string literals (text within single quotes)
+    # This handles escaped single quotes within the string
+    pattern = r"'([^']*(?:''[^']*)*)'" 
+    
+    # Find all string literals
+    matches = re.findall(pattern, sql_query)
+    parameters = []
+    
+    # Replace each string literal with a placeholder
+    modified_query = sql_query
+    for i, match in enumerate(matches):
+        # Replace escaped single quotes with single quotes
+        value = match.replace("''", "'")
+        parameters.append(value)
+        
+        # Replace the string literal with a placeholder
+        # We need to account for the quotes in the replacement
+        old_literal = f"'{match}'"
+        placeholder = f"?"
+        
+        # Only replace the first occurrence each time to handle repeated literals correctly
+        modified_query = modified_query.replace(old_literal, placeholder, 1)
+    
+    return modified_query, parameters
 
 def main():
     parser = argparse.ArgumentParser(description='Start a web server for querying S3 CSV files using DuckDB')

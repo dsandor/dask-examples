@@ -70,8 +70,14 @@ class DistributedQueryServer:
         join_conditions = []
         where_conditions = []
         
+        # Create a version with SQL keywords converted to lowercase for parsing
+        # but preserve the original query for values
+        query_structure = re.sub(r'(?i)(SELECT|FROM|JOIN|ON|WHERE|AND|OR|LIMIT)', 
+                              lambda m: m.group(0).lower(), 
+                              query)
+        
         # Split query into parts
-        parts = query.lower().split()
+        parts = query_structure.split()
         current_table = None
         in_where = False
         
@@ -305,26 +311,26 @@ class DistributedQueryServer:
             'limit': None
         }
         
-        # Convert to lowercase for easier parsing
-        query_lower = query.lower()
+        # Use a case-insensitive regex for SQL keywords but preserve the original query
+        # for extracting actual values
         
         # Extract SELECT clause
-        select_match = re.search(r'select\s+(.*?)\s+from', query_lower)
+        select_match = re.search(r'(?i)select\s+(.*?)\s+from', query)
         if select_match:
             components['select'] = select_match.group(1)
         
         # Extract FROM clause
-        from_match = re.search(r'from\s+(\w+)', query_lower)
+        from_match = re.search(r'(?i)from\s+(\w+)', query)
         if from_match:
             components['from'] = from_match.group(1)
         
         # Extract WHERE clause
-        where_match = re.search(r'where\s+(.*?)(?:\s+limit\s+\d+)?$', query_lower)
+        where_match = re.search(r'(?i)where\s+(.*?)(?:\s+limit\s+\d+)?$', query)
         if where_match:
             components['where'] = where_match.group(1)
         
         # Extract LIMIT clause
-        limit_match = re.search(r'limit\s+(\d+)', query_lower)
+        limit_match = re.search(r'(?i)limit\s+(\d+)', query)
         if limit_match:
             components['limit'] = limit_match.group(1)
         
