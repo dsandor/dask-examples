@@ -174,14 +174,16 @@ class DistributedQueryServer:
                 detail=f"Unexpected error when querying {url}: {str(e)}"
             )
     
-    async def _optimize_join_query(self, query: str) -> str:
-        """Optimize join query by querying smaller table first and pushing down WHERE clauses."""
+    async def _optimize_join_query(self, query: str) -> Tuple[str, List[str]]:
+        """Optimize join query by querying smaller table first and pushing down WHERE clauses.
+        Returns a tuple of (optimized_query, temp_table_names) so the caller can clean up tables.
+        """
         # Parse the query components to extract tables, join conditions, and where clauses
         components = self._parse_query_components(query)
         tables, join_conditions, where_conditions = self._parse_join_conditions(query)
         
         if len(tables) < 2:
-            return query
+            return query, []
         
         # Get metadata for all tables
         table_metadata = {}
@@ -190,7 +192,7 @@ class DistributedQueryServer:
                 table_metadata[table] = await self._get_table_metadata(table)
             except Exception as e:
                 logger.error(f"Error getting metadata for {table}: {str(e)}")
-                return query
+                return query, []
         
         # Extract column references from WHERE conditions to determine which conditions
         # can be pushed down to which tables
@@ -267,17 +269,19 @@ class DistributedQueryServer:
                 {remaining_where}
             """
             
-            return optimized_query
+            # Return the query and temp tables, but don't drop the tables yet
+            # The caller will execute the query and then clean up
+            return optimized_query, temp_tables
         except Exception as e:
-            logger.error(f"Error in query optimization: {str(e)}")
-            return query
-        finally:
-            # Clean up temporary tables
+            # Clean up any tables we created if there was an error
             for temp_table in temp_tables:
                 try:
                     self.conn.execute(f"DROP TABLE IF EXISTS {temp_table}")
-                except Exception as e:
-                    logger.error(f"Error dropping temporary table {temp_table}: {str(e)}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error dropping temporary table {temp_table}: {str(cleanup_error)}")
+            
+            logger.error(f"Error in query optimization: {str(e)}")
+            return query, []
     
     async def _execute_distributed_query_original(self, query: str) -> Tuple[str, List[pd.DataFrame]]:
         """Original implementation of distributed query execution with WHERE clause push-down."""
@@ -353,9 +357,10 @@ class DistributedQueryServer:
     
     async def _execute_distributed_query(self, query: str) -> pd.DataFrame:
         """Execute a query across multiple data containers."""
+        temp_tables = []
         try:
             # Try to optimize the join query
-            modified_query = await self._optimize_join_query(query)
+            modified_query, temp_tables = await self._optimize_join_query(query)
             
             # Execute the modified query
             logger.info(f"Executing optimized query: {modified_query}")
@@ -374,6 +379,13 @@ class DistributedQueryServer:
             result = self.conn.execute(modified_query).fetchdf()
             
             return result
+        finally:
+            # Clean up any temporary tables we created
+            for temp_table in temp_tables:
+                try:
+                    self.conn.execute(f"DROP TABLE IF EXISTS {temp_table}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error dropping temporary table {temp_table}: {str(cleanup_error)}")
     
     def _parse_query_components(self, query: str) -> Dict:
         """Parse a SQL query into its components (SELECT, FROM, WHERE, LIMIT)."""
