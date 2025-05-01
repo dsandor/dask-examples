@@ -294,7 +294,7 @@ class DistributedQueryServer:
             
             # Build the final query as a single string without multi-line formatting
             # to avoid DuckDB parsing issues
-            optimized_query = f"SELECT * FROM {temp_tables[0]} {join_clause} {remaining_where}"
+            optimized_query = f"SELECT * FROM {temp_tables[0]}{join_clause}{remaining_where}"
             
             # Return the query and temp tables, but don't drop the tables yet
             # The caller will execute the query and then clean up
@@ -391,7 +391,25 @@ class DistributedQueryServer:
             
             # Execute the modified query
             logger.info(f"Executing optimized query: {modified_query}")
-            result = self.conn.execute(modified_query).fetchdf()
+            # Ensure we're passing a properly formatted string query to DuckDB
+            # Trim any extra whitespace and ensure it's a valid SQL string
+            clean_query = modified_query.strip()
+            
+            # Add debug logging to help diagnose DuckDB issues
+            logger.info(f"DuckDB query type: {type(clean_query)}")
+            logger.info(f"DuckDB query (repr): {repr(clean_query)}")
+            
+            # Execute the query with a more direct approach
+            # First, create a view of the join result
+            view_name = "distributed_query_result"
+            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+            self.conn.execute(f"CREATE VIEW {view_name} AS {clean_query}")
+            
+            # Then select from the view
+            result = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
+            
+            # Clean up the view
+            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
             
             return result
         except Exception as e:
@@ -403,7 +421,21 @@ class DistributedQueryServer:
             
             # Execute the modified query
             logger.info(f"Executing original query: {modified_query}")
-            result = self.conn.execute(modified_query).fetchdf()
+            # Ensure we're passing a properly formatted string query to DuckDB
+            # Trim any extra whitespace and ensure it's a valid SQL string
+            clean_query = modified_query.strip()
+            
+            # Execute the query with a more direct approach
+            # First, create a view of the join result
+            view_name = "distributed_query_result_fallback"
+            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+            self.conn.execute(f"CREATE VIEW {view_name} AS {clean_query}")
+            
+            # Then select from the view
+            result = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
+            
+            # Clean up the view
+            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
             
             return result
         finally:
