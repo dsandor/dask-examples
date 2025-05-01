@@ -236,7 +236,9 @@ def setup_duckdb(url: str, table_name: str) -> None:
             compression='gzip',
             auto_detect=true,
             header=true,
-            sample_size=-1
+            sample_size=-1,
+            quote='"',
+            escape='"'
         ) LIMIT 0
     """)
     
@@ -247,7 +249,9 @@ def setup_duckdb(url: str, table_name: str) -> None:
             compression='gzip',
             auto_detect=true,
             header=true,
-            sample_size=-1
+            sample_size=-1,
+            quote='"',
+            escape='"'
         )
     """)
     
