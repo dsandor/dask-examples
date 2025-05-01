@@ -399,17 +399,59 @@ class DistributedQueryServer:
             logger.info(f"DuckDB query type: {type(clean_query)}")
             logger.info(f"DuckDB query (repr): {repr(clean_query)}")
             
-            # Execute the query with a more direct approach
-            # First, create a view of the join result
-            view_name = "distributed_query_result"
-            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
-            self.conn.execute(f"CREATE VIEW {view_name} AS {clean_query}")
-            
-            # Then select from the view
-            result = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
-            
-            # Clean up the view
-            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+            # Execute the query with a more direct approach with extensive error handling
+            try:
+                # First, verify all temporary tables exist and have data
+                for table in temp_tables:
+                    try:
+                        count = self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                        logger.info(f"Table {table} exists with {count} rows")
+                        # Get column information
+                        columns = self.conn.execute(f"PRAGMA table_info({table})").fetchdf()
+                        logger.info(f"Table {table} columns: {list(columns['name'])}")
+                    except Exception as table_error:
+                        logger.error(f"Error checking table {table}: {str(table_error)}")
+                
+                # Try to execute the query directly first with detailed logging
+                logger.info(f"Attempting direct query execution: {clean_query}")
+                try:
+                    # Use explicit string casting and strip any whitespace
+                    query_str = str(clean_query).strip()
+                    logger.info(f"Query after string conversion: {repr(query_str)}")
+                    result = self.conn.execute(query_str).fetchdf()
+                    logger.info("Direct query execution succeeded")
+                    return result
+                except Exception as direct_error:
+                    logger.error(f"Direct query execution failed: {str(direct_error)}")
+                    logger.info("Falling back to view-based approach")
+                
+                # If direct execution fails, try the view approach
+                view_name = "distributed_query_result"
+                logger.info(f"Creating view {view_name} with query: {clean_query}")
+                self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+                
+                # Try to create the view with explicit string handling
+                create_view_sql = f"CREATE VIEW {view_name} AS {str(clean_query).strip()}"
+                logger.info(f"Create view SQL: {repr(create_view_sql)}")
+                self.conn.execute(create_view_sql)
+                
+                # Verify the view was created
+                view_exists = self.conn.execute(f"SELECT COUNT(*) FROM information_schema.views WHERE table_name = '{view_name}'").fetchone()[0]
+                logger.info(f"View {view_name} exists: {view_exists > 0}")
+                
+                # Then select from the view
+                logger.info(f"Selecting from view {view_name}")
+                result = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
+                logger.info(f"Successfully selected {len(result)} rows from view")
+                
+                # Clean up the view
+                self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+                return result
+            except Exception as query_error:
+                logger.error(f"Comprehensive query execution failed: {str(query_error)}")
+                logger.error(f"Query that failed: {repr(clean_query)}")
+                # Re-raise to be caught by the outer try/except
+                raise
             
             return result
         except Exception as e:
@@ -425,17 +467,47 @@ class DistributedQueryServer:
             # Trim any extra whitespace and ensure it's a valid SQL string
             clean_query = modified_query.strip()
             
-            # Execute the query with a more direct approach
-            # First, create a view of the join result
-            view_name = "distributed_query_result_fallback"
-            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
-            self.conn.execute(f"CREATE VIEW {view_name} AS {clean_query}")
-            
-            # Then select from the view
-            result = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
-            
-            # Clean up the view
-            self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+            # Execute the query with a more direct approach with extensive error handling
+            try:
+                # First, verify all temporary tables exist
+                for table_name, _ in dfs:
+                    temp_table = f"temp_{table_name}"
+                    try:
+                        count = self.conn.execute(f"SELECT COUNT(*) FROM {temp_table}").fetchone()[0]
+                        logger.info(f"Fallback: Table {temp_table} exists with {count} rows")
+                    except Exception as table_error:
+                        logger.error(f"Fallback: Error checking table {temp_table}: {str(table_error)}")
+                
+                # Try direct execution first
+                logger.info(f"Fallback: Attempting direct query execution: {clean_query}")
+                try:
+                    query_str = str(clean_query).strip()
+                    logger.info(f"Fallback: Query after string conversion: {repr(query_str)}")
+                    result = self.conn.execute(query_str).fetchdf()
+                    logger.info("Fallback: Direct query execution succeeded")
+                    return result
+                except Exception as direct_error:
+                    logger.error(f"Fallback: Direct query execution failed: {str(direct_error)}")
+                
+                # Try view-based approach as fallback
+                view_name = "distributed_query_result_fallback"
+                logger.info(f"Fallback: Creating view {view_name}")
+                self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+                
+                create_view_sql = f"CREATE VIEW {view_name} AS {str(clean_query).strip()}"
+                logger.info(f"Fallback: Create view SQL: {repr(create_view_sql)}")
+                self.conn.execute(create_view_sql)
+                
+                logger.info(f"Fallback: Selecting from view {view_name}")
+                result = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
+                logger.info(f"Fallback: Selected {len(result)} rows from view")
+                
+                self.conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+                return result
+            except Exception as query_error:
+                logger.error(f"Fallback: Comprehensive query execution failed: {str(query_error)}")
+                logger.error(f"Fallback: Query that failed: {repr(clean_query)}")
+                raise
             
             return result
         finally:
