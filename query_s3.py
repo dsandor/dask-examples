@@ -227,9 +227,9 @@ def setup_duckdb(url: str, table_name: str) -> None:
     conn.execute("SET enable_progress_bar=true")
     
     # Set case-sensitive string comparison for literals
-    conn.execute("PRAGMA case_sensitive_like=true")
     conn.execute("SET preserve_identifier_case=true")
     conn.execute("SET preserve_input_case=true")
+    conn.execute("SET default_null_order='nulls_first'")
     
     # Create a view that will lazily load the data from local cache only
     logger.info(f"Creating lazy-loaded view from local cache: {local_cache_path}")
