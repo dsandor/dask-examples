@@ -175,7 +175,9 @@ class DistributedQueryServer:
             )
     
     async def _optimize_join_query(self, query: str) -> str:
-        """Optimize join query by querying smaller table first."""
+        """Optimize join query by querying smaller table first and pushing down WHERE clauses."""
+        # Parse the query components to extract tables, join conditions, and where clauses
+        components = self._parse_query_components(query)
         tables, join_conditions, where_conditions = self._parse_join_conditions(query)
         
         if len(tables) < 2:
@@ -190,10 +192,32 @@ class DistributedQueryServer:
                 logger.error(f"Error getting metadata for {table}: {str(e)}")
                 return query
         
-        # Find the smallest table
-        smallest_table = min(table_metadata.items(), key=lambda x: x[1]['row_count'])
+        # Extract column references from WHERE conditions to determine which conditions
+        # can be pushed down to which tables
+        table_where_conditions = {table: [] for table in tables}
+        common_where_conditions = []
         
-        # Create temporary tables for each data source
+        # If there's a WHERE clause, analyze it
+        if components['where']:
+            # Split WHERE clause into individual conditions (this is a simple split by AND)
+            where_parts = components['where'].split(' AND ')
+            
+            for condition in where_parts:
+                condition = condition.strip()
+                assigned = False
+                
+                # Check if condition references a specific table
+                for table in tables:
+                    if table + '.' in condition or condition.split()[0] in table_metadata[table].get('columns', []):
+                        table_where_conditions[table].append(condition)
+                        assigned = True
+                        break
+                
+                # If not assigned to a specific table, it might be a common condition
+                if not assigned:
+                    common_where_conditions.append(condition)
+        
+        # Create temporary tables for each data source with filtered data
         temp_tables = []
         try:
             for table in tables:
@@ -204,18 +228,43 @@ class DistributedQueryServer:
                 # Drop existing temporary table if it exists
                 self.conn.execute(f"DROP TABLE IF EXISTS {temp_table}")
                 
-                # Create temporary table
+                # Build WHERE clause for this table's remote query
+                table_conditions = table_where_conditions[table]
+                where_clause = ""
+                if table_conditions:
+                    where_clause = f" WHERE {' AND '.join(table_conditions)}"
+                
+                # Create a remote query that includes the WHERE clause
+                remote_query = f"SELECT * FROM {container.table_name}{where_clause}"
+                logger.info(f"Forwarding query to container: {remote_query}")
+                logger.info(f"Connecting to container at: http://{container.url}:{container.port}")
+                
+                # Execute the remote query and create a temporary table from the results
+                df = await self._execute_remote_query(table, remote_query)
+                
+                # Register the DataFrame as a table in DuckDB
+                self.conn.register(f"df_{temp_table}", df)
+                
+                # Create the temporary table from the DataFrame
                 self.conn.execute(f"""
                     CREATE TABLE {temp_table} AS 
-                    SELECT * FROM '{container.url}:{container.port}/{container.table_name}'
+                    SELECT * FROM df_{temp_table}
                 """)
             
-            # Build optimized query
+            # Build optimized query with the remaining WHERE conditions
+            remaining_where = ""
+            if common_where_conditions:
+                remaining_where = f" WHERE {' AND '.join(common_where_conditions)}"
+            
+            # Build the join part of the query
+            join_clause = ""
+            for i, (temp, cond) in enumerate(zip(temp_tables[1:], join_conditions)):
+                join_clause += f" JOIN {temp} ON {cond}"
+            
             optimized_query = f"""
-                WITH {', '.join(f'{temp} AS (SELECT * FROM {temp})' for temp in temp_tables)}
                 SELECT * FROM {temp_tables[0]}
-                {' '.join(f'JOIN {temp} ON {cond}' for temp, cond in zip(temp_tables[1:], join_conditions))}
-                {'WHERE ' + ' AND '.join(where_conditions) if where_conditions else ''}
+                {join_clause}
+                {remaining_where}
             """
             
             return optimized_query
@@ -231,10 +280,11 @@ class DistributedQueryServer:
                     logger.error(f"Error dropping temporary table {temp_table}: {str(e)}")
     
     async def _execute_distributed_query_original(self, query: str) -> Tuple[str, List[pd.DataFrame]]:
-        """Original implementation of distributed query execution."""
-        # Parse the query to get involved tables
+        """Original implementation of distributed query execution with WHERE clause push-down."""
+        # Parse the query to get involved tables and components
         tables = self._parse_query(query)
         self._validate_tables(tables)
+        components = self._parse_query_components(query)
         
         # Extract LIMIT if present
         limit = self._extract_limit(query)
@@ -254,22 +304,46 @@ class DistributedQueryServer:
             else:
                 columns = "*"
             
-            # Create and execute the subquery
-            subquery = f"SELECT {columns} FROM {table_config.table_name}"
-            logger.info(f"Executing subquery for table {table}: {subquery}")
+            # Determine if any WHERE conditions can be applied to this table
+            where_clause = ""
+            if components['where']:
+                # Try to find conditions that apply to this table
+                table_conditions = []
+                
+                # Simple approach: check if the condition mentions the table name
+                # or if it's a simple column comparison that might be applicable
+                where_parts = components['where'].split(' AND ')
+                for condition in where_parts:
+                    condition = condition.strip()
+                    if table + '.' in condition or condition.split()[0] in columns:
+                        table_conditions.append(condition)
+                
+                if table_conditions:
+                    where_clause = f" WHERE {' AND '.join(table_conditions)}"
+            
+            # Create and execute the subquery with WHERE clause if applicable
+            subquery = f"SELECT {columns} FROM {table_config.table_name}{where_clause}"
+            logger.info(f"Forwarding query to container: {subquery}")
+            logger.info(f"Connecting to container at: http://{table_config.url}:{table_config.port}")
             df = await self._execute_remote_query(table, subquery)
             
             # Create a temporary table in DuckDB
             temp_table = f"temp_{table}"
-            self.conn.execute(f"CREATE TABLE {temp_table} AS SELECT * FROM df")
+            # Drop if exists
+            self.conn.execute(f"DROP TABLE IF EXISTS {temp_table}")
+            # Register the DataFrame
+            self.conn.register(f"df_{temp_table}", df)
+            # Create the table
+            self.conn.execute(f"CREATE TABLE {temp_table} AS SELECT * FROM df_{temp_table}")
             dfs.append((table, df))
         
         # Execute the join in DuckDB
         # Replace table names in the original query with temp table names
         modified_query = query_without_limit
         for table, _ in dfs:
-            temp_table = f"temp_{table}"
-            modified_query = modified_query.replace(table, temp_table)
+            # Use word boundaries to avoid partial replacements
+            # For example, avoid replacing 'table1' in 'table10'
+            modified_query = re.sub(rf'\b{table}\b', f"temp_{table}", modified_query)
         
         # Add back the LIMIT clause if it was present
         if limit:
