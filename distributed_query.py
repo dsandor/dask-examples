@@ -225,7 +225,9 @@ class DistributedQueryServer:
                         # Check if this table has this column
                         table_columns = [col.get('name', '').lower() for col in table_metadata[table].get('columns', [])]
                         if column_name.lower() in table_columns:
-                            table_where_conditions[table].append(condition)
+                            # Qualify the column name with the table name
+                            qualified_condition = f"{table}.{column_name}{condition[condition.find('='):]}"
+                            table_where_conditions[table].append(qualified_condition)
                             condition_assigned = True
                     
                     # If we couldn't assign it to any table, add it as a common condition
