@@ -613,8 +613,8 @@ class DistributedQueryServer:
                     return response_data
             else:
                 # Multi-table query - use optimization
-                optimized_query = await self._optimize_join_query(query_request.query)
-                result = self.conn.execute(optimized_query).fetchdf()
+                optimized_query, temp_tables = await self._optimize_join_query(query_request.query)
+                result = await self._execute_distributed_query(query_request.query)
                 
                 # Convert results to list of dictionaries
                 results = result.to_dict('records')
