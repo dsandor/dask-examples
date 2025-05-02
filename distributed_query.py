@@ -41,6 +41,9 @@ class DistributedQueryServer:
         self.config = self._load_config(config_path)
         self.conn = duckdb.connect(database=':memory:')
         self.client = httpx.AsyncClient(timeout=30.0)  # 30 second timeout
+        self._metadata_cache = {}  # Cache for table metadata
+        self._metadata_cache_time = {}  # Cache timestamp for metadata
+        self._metadata_cache_ttl = 300  # Cache TTL in seconds (5 minutes)
         
     def _load_config(self, config_path: str) -> Config:
         """Load configuration from JSON file."""
@@ -115,7 +118,14 @@ class DistributedQueryServer:
         return re.sub(r'(?i)\s+LIMIT\s+\d+', '', query)
     
     async def _get_table_metadata(self, table: str) -> Dict:
-        """Get metadata about a table from its data container."""
+        """Get metadata about a table from its data container with caching."""
+        # Check if we have cached metadata that's still valid
+        current_time = time.time()
+        if (table in self._metadata_cache and 
+            table in self._metadata_cache_time and
+            current_time - self._metadata_cache_time[table] < self._metadata_cache_ttl):
+            return self._metadata_cache[table]
+        
         table_config = self.config.tables[table]
         
         # Ensure URL has http:// prefix
@@ -129,7 +139,13 @@ class DistributedQueryServer:
         try:
             response = await self.client.get(url)
             response.raise_for_status()
-            return response.json()
+            metadata = response.json()
+            
+            # Cache the metadata
+            self._metadata_cache[table] = metadata
+            self._metadata_cache_time[table] = current_time
+            
+            return metadata
         except Exception as e:
             logger.error(f"Error getting metadata from {url}: {str(e)}")
             raise HTTPException(
@@ -179,9 +195,7 @@ class DistributedQueryServer:
             )
     
     async def _optimize_join_query(self, query: str) -> Tuple[str, List[str]]:
-        """Optimize join query by querying smaller table first and pushing down WHERE clauses.
-        Returns a tuple of (optimized_query, temp_table_names) so the caller can clean up tables.
-        """
+        """Optimize join query by querying smaller table first and pushing down WHERE clauses."""
         # Parse the query components to extract tables, join conditions, and where clauses
         components = self._parse_query_components(query)
         tables, join_conditions, where_conditions = self._parse_join_conditions(query)
@@ -189,7 +203,7 @@ class DistributedQueryServer:
         if len(tables) < 2:
             return query, []
         
-        # Get metadata for all tables
+        # Get metadata for all tables (will use cache if available)
         table_metadata = {}
         for table in tables:
             try:
@@ -198,44 +212,33 @@ class DistributedQueryServer:
                 logger.error(f"Error getting metadata for {table}: {str(e)}")
                 return query, []
         
-        # Extract column references from WHERE conditions to determine which conditions
-        # can be pushed down to which tables
+        # Extract column references from WHERE conditions
         table_where_conditions = {table: [] for table in tables}
         common_where_conditions = []
         
         # If there's a WHERE clause, analyze it
         if components['where']:
-            # Split WHERE clause into individual conditions (this is a simple split by AND)
             where_parts = components['where'].split(' AND ')
             
             for condition in where_parts:
                 condition = condition.strip()
-                
-                # For simple equality conditions like id_bb_global='BBG000B9XB24',
-                # apply to all tables that have that column
                 column_match = re.match(r'([\w._]+)\s*=\s*(.+)', condition)
                 if column_match:
                     column_name = column_match.group(1)
-                    # Remove table prefix if present
                     if '.' in column_name:
                         _, column_name = column_name.split('.', 1)
                     
-                    # Add this condition to all tables that have this column
                     condition_assigned = False
                     for table in tables:
-                        # Check if this table has this column
                         table_columns = [col.get('name', '').lower() for col in table_metadata[table].get('columns', [])]
                         if column_name.lower() in table_columns:
-                            # Qualify the column name with the table name
                             qualified_condition = f"{table}.{column_name}{condition[condition.find('='):]}"
                             table_where_conditions[table].append(qualified_condition)
                             condition_assigned = True
                     
-                    # If we couldn't assign it to any table, add it as a common condition
                     if not condition_assigned:
                         common_where_conditions.append(condition)
                 else:
-                    # For more complex conditions, try to determine if they reference a specific table
                     assigned = False
                     for table in tables:
                         if table + '.' in condition:
@@ -243,7 +246,6 @@ class DistributedQueryServer:
                             assigned = True
                             break
                     
-                    # If not assigned to a specific table, it's a common condition
                     if not assigned:
                         common_where_conditions.append(condition)
         
