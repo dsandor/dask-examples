@@ -3,3 +3,5 @@
 *.log
 *.txt
 .DS_Store
+metadata.json
+analysis.json
