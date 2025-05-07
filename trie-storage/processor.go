@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"runtime"
+	"time"
 )
 
 // RecordChunk represents a chunk of records to be processed
@@ -60,6 +61,8 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 }
 
 func (p *DataProcessor) processAssetFile(filename string) error {
+	startTime := time.Now()
+	
 	// Find the most recent file for this asset type
 	filePath, err := p.findMostRecentFile(filename)
 	if err != nil {
@@ -74,11 +77,16 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	}
 
 	// Read and process the CSV file
+	readStart := time.Now()
 	records, err := p.readCSVFile(filePath)
 	if err != nil {
 		return err
 	}
-	p.logger.Info("Read %d records from %s", len(records), p.logger.HighlightFile(filePath))
+	readDuration := time.Since(readStart)
+	p.logger.Info("Read %d records from %s in %s", 
+		len(records), 
+		p.logger.HighlightFile(filePath),
+		p.logger.HighlightValue(readDuration))
 
 	// Get column headers and metadata
 	headers := records[0]
@@ -103,11 +111,16 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	// Create channels for work distribution
 	chunkChan := make(chan RecordChunk, numWorkers)
 	errorChan := make(chan error, numWorkers)
+	progressChan := make(chan int, numWorkers*2) // Buffer for progress updates
+
+	// Start progress monitor
+	go p.monitorProgress(expectedRows, filePath, progressChan)
 
 	// Start worker goroutines
 	p.wg.Add(numWorkers)
+	processStart := time.Now()
 	for i := 0; i < numWorkers; i++ {
-		go p.worker(chunkChan, errorChan)
+		go p.worker(chunkChan, errorChan, progressChan)
 	}
 
 	// Calculate chunk size
@@ -137,6 +150,7 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	// Wait for all workers to complete
 	p.wg.Wait()
 	close(errorChan)
+	close(progressChan)
 
 	// Check for any errors
 	for err := range errorChan {
@@ -145,32 +159,51 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		}
 	}
 
+	processDuration := time.Since(processStart)
+	totalDuration := time.Since(startTime)
+
 	// Clear the progress bar and show completion
 	p.logger.ClearProgress()
-	p.logger.Success("Completed processing %s", p.logger.HighlightFile(filePath))
+	p.logger.Success("Completed processing %s in %s (Read: %s, Process: %s)", 
+		p.logger.HighlightFile(filePath),
+		p.logger.HighlightValue(totalDuration),
+		p.logger.HighlightValue(readDuration),
+		p.logger.HighlightValue(processDuration))
 
 	return nil
 }
 
-func (p *DataProcessor) worker(chunkChan <-chan RecordChunk, errorChan chan<- error) {
+func (p *DataProcessor) monitorProgress(expectedRows int, filePath string, progressChan <-chan int) {
+	processedRows := 0
+	lastPercentage := 0
+
+	for count := range progressChan {
+		processedRows += count
+		if expectedRows > 0 {
+			percentage := int(float64(processedRows) / float64(expectedRows) * 100)
+			if percentage > lastPercentage {
+				lastPercentage = percentage
+				p.mu.Lock()
+				p.logger.ProgressBar(filePath, float64(percentage))
+				p.mu.Unlock()
+			}
+		}
+	}
+}
+
+func (p *DataProcessor) worker(chunkChan <-chan RecordChunk, errorChan chan<- error, progressChan chan<- int) {
 	defer p.wg.Done()
 
 	for chunk := range chunkChan {
-		for i, record := range chunk.Records {
+		processedCount := 0
+		for _, record := range chunk.Records {
 			if err := p.processRecord(record, chunk.Headers, chunk.ColumnMetadata, chunk.SourceFile); err != nil {
 				errorChan <- err
 				return
 			}
-
-			// Update progress every 1%
-			globalIndex := chunk.StartIndex + i
-			if p.config.EnableHistory && globalIndex%(p.getExpectedRowCount(filepath.Base(chunk.SourceFile))/100) == 0 {
-				percentage := float64(globalIndex) / float64(p.getExpectedRowCount(filepath.Base(chunk.SourceFile))) * 100
-				p.mu.Lock()
-				p.logger.ProgressBar(chunk.SourceFile, percentage)
-				p.mu.Unlock()
-			}
+			processedCount++
 		}
+		progressChan <- processedCount
 	}
 }
 
