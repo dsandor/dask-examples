@@ -89,6 +89,7 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		p.logger.HighlightValue(readDuration))
 
 	// Get column headers and metadata
+	metaStart := time.Now()
 	headers := records[0]
 	fileMetadata := p.getFileMetadata(filename)
 	if fileMetadata == nil {
@@ -100,13 +101,41 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	for _, col := range fileMetadata.Columns {
 		columnMetadata[col.Name] = col
 	}
+	metaDuration := time.Since(metaStart)
+	p.logger.Info("Processed metadata in %s", p.logger.HighlightValue(metaDuration))
 
 	// Calculate number of workers (use number of CPU cores)
 	numWorkers := runtime.NumCPU()
 	if numWorkers < 1 {
 		numWorkers = 1
 	}
-	p.logger.Info("Starting parallel processing with %d worker threads", p.logger.HighlightValue(numWorkers))
+
+	// Calculate chunk size
+	chunkSize := (len(records) - 1) / numWorkers
+	if chunkSize < 1 {
+		chunkSize = 1
+	}
+
+	// Pre-allocate chunks to avoid allocations during processing
+	chunks := make([]RecordChunk, 0, numWorkers)
+	for i := 1; i < len(records); i += chunkSize {
+		end := i + chunkSize
+		if end > len(records) {
+			end = len(records)
+		}
+
+		chunks = append(chunks, RecordChunk{
+			Records:       records[i:end],
+			Headers:       headers,
+			ColumnMetadata: columnMetadata,
+			SourceFile:    filePath,
+			StartIndex:    i,
+		})
+	}
+	chunkDuration := time.Since(metaStart)
+	p.logger.Info("Prepared %d chunks for parallel processing in %s", 
+		len(chunks), 
+		p.logger.HighlightValue(chunkDuration))
 
 	// Create channels for work distribution
 	chunkChan := make(chan RecordChunk, numWorkers)
@@ -119,30 +148,10 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	// Start worker goroutines
 	p.wg.Add(numWorkers)
 	processStart := time.Now()
-	for i := 0; i < numWorkers; i++ {
-		go p.worker(chunkChan, errorChan, progressChan)
-	}
+	p.logger.Info("Starting parallel processing with %s worker threads", p.logger.HighlightValue(numWorkers))
 
-	// Calculate chunk size
-	chunkSize := (len(records) - 1) / numWorkers
-	if chunkSize < 1 {
-		chunkSize = 1
-	}
-
-	// Split records into chunks and send to workers
-	for i := 1; i < len(records); i += chunkSize {
-		end := i + chunkSize
-		if end > len(records) {
-			end = len(records)
-		}
-
-		chunk := RecordChunk{
-			Records:       records[i:end],
-			Headers:       headers,
-			ColumnMetadata: columnMetadata,
-			SourceFile:    filePath,
-			StartIndex:    i,
-		}
+	// Send chunks to workers
+	for _, chunk := range chunks {
 		chunkChan <- chunk
 	}
 	close(chunkChan)
@@ -164,10 +173,11 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 
 	// Clear the progress bar and show completion
 	p.logger.ClearProgress()
-	p.logger.Success("Completed processing %s in %s (Read: %s, Process: %s)", 
+	p.logger.Success("Completed processing %s in %s (Read: %s, Setup: %s, Process: %s)", 
 		p.logger.HighlightFile(filePath),
 		p.logger.HighlightValue(totalDuration),
 		p.logger.HighlightValue(readDuration),
+		p.logger.HighlightValue(chunkDuration),
 		p.logger.HighlightValue(processDuration))
 
 	return nil
