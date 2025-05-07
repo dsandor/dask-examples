@@ -13,6 +13,7 @@ type Config struct {
 	CompanyDestRoot string
 	MetadataFile    string
 	AnalysisFile    string
+	EnableHistory   bool
 }
 
 func main() {
@@ -25,6 +26,7 @@ func main() {
 	logger.Info("Company Destination Root: %s", logger.HighlightFile(config.CompanyDestRoot))
 	logger.Info("Metadata File: %s", logger.HighlightFile(config.MetadataFile))
 	logger.Info("Analysis File: %s", logger.HighlightFile(config.AnalysisFile))
+	logger.Info("History Tracking: %s", logger.HighlightValue(config.EnableHistory))
 	
 	// Load metadata
 	logger.Info("Loading metadata from %s", logger.HighlightFile(config.MetadataFile))
@@ -60,6 +62,7 @@ func parseFlags() Config {
 	companyDestRoot := flag.String("company-dest", "", "Destination root path for company files")
 	metadataFile := flag.String("metadata", "metadata.json", "Path to metadata.json file")
 	analysisFile := flag.String("analysis", "analysis.json", "Path to analysis.json file")
+	enableHistory := flag.Bool("history", false, "Enable history tracking")
 	flag.Parse()
 
 	if *sourceRoot == "" || *assetDestRoot == "" || *companyDestRoot == "" {
@@ -72,6 +75,7 @@ func parseFlags() Config {
 		CompanyDestRoot: *companyDestRoot,
 		MetadataFile:    *metadataFile,
 		AnalysisFile:    *analysisFile,
+		EnableHistory:   *enableHistory,
 	}
 }
 

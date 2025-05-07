@@ -1,0 +1,12 @@
+{
+    "CURRENCY": {
+        "20250501": {
+            "filename": "currency.20250501.csv.gz",
+            "value": "USD"
+        },
+        "20250502": {
+            "filename": "currency.20250502.csv.gz",
+            "value": "EUR"
+        }
+    }
+}

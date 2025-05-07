@@ -18,6 +18,15 @@ type DataProcessor struct {
 	logger   *Logger
 }
 
+// HistoryEntry represents a single history entry with file and value
+type HistoryEntry struct {
+	File  string      `json:"file"`
+	Value interface{} `json:"value"`
+}
+
+// HistoryData represents the history data structure
+type HistoryData map[string]map[string]HistoryEntry
+
 func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataProcessor {
 	return &DataProcessor{
 		config:   config,
@@ -187,7 +196,14 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 		}
 	}
 
-	// Update properties
+	// Get effective date from source file
+	effectiveDate := p.getEffectiveDate(sourceFile)
+	if effectiveDate == "" {
+		p.logger.Warning("Could not extract effective date from file: %s", sourceFile)
+		return nil
+	}
+
+	// Update properties and history
 	for i, value := range record {
 		columnName := headers[i]
 		metadata, exists := columnMetadata[columnName]
@@ -205,9 +221,11 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 		// Update property value
 		assetData.Properties[columnName] = convertedValue
 
-		// Update property history
-		if err := p.updatePropertyHistory(id, columnName, convertedValue, sourceFile); err != nil {
-			return err
+		// Update history if enabled
+		if p.config.EnableHistory {
+			if err := p.updatePropertyHistory(id, columnName, convertedValue, sourceFile, effectiveDate); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -247,23 +265,28 @@ func (p *DataProcessor) createTriePath(id string) string {
 	return path
 }
 
-func (p *DataProcessor) updatePropertyHistory(id, propertyName string, value interface{}, sourceFile string) error {
+func (p *DataProcessor) updatePropertyHistory(id, propertyName string, value interface{}, sourceFile, effectiveDate string) error {
 	historyPath := filepath.Join(p.createTriePath(id), "history.json")
 	
-	var history PropertyHistory
+	var history HistoryData
 	if data, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(data, &history); err != nil {
 			return err
 		}
+	} else {
+		history = make(HistoryData)
 	}
 
-	effectiveDate := p.getEffectiveDate(sourceFile)
-	// Add new history entry
-	history.History = append(history.History, History{
-		Value:         value,
-		SourceFile:    sourceFile,
-		EffectiveDate: effectiveDate,
-	})
+	// Initialize property map if it doesn't exist
+	if _, exists := history[propertyName]; !exists {
+		history[propertyName] = make(map[string]HistoryEntry)
+	}
+
+	// Add or update history entry
+	history[propertyName][effectiveDate] = HistoryEntry{
+		File:  filepath.Base(sourceFile),
+		Value: value,
+	}
 
 	// Save updated history
 	data, err := json.MarshalIndent(history, "", "  ")
