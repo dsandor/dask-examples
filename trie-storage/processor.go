@@ -214,18 +214,13 @@ func (p *DataProcessor) processMetadata(records [][]string) (map[string]Column, 
 
 	metadata := make(map[string]Column)
 
-	// Find the metadata for this file
-	var fileMetadata *Metadata
-	for _, meta := range p.config.Metadata {
-		if meta.Filename == filepath.Base(records[0][0]) {
-			fileMetadata = &meta
-			break
-		}
+	// Use the metadata from the config directly since there's only one metadata file
+	if len(p.config.Metadata) == 0 {
+		return nil, fmt.Errorf("no metadata found in configuration")
 	}
 
-	if fileMetadata == nil {
-		return nil, fmt.Errorf("no metadata found for file")
-	}
+	// Use the first (and only) metadata entry
+	fileMetadata := &p.config.Metadata[0]
 
 	// Create column metadata mapping
 	for _, col := range fileMetadata.Columns {
