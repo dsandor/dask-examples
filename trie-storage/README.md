@@ -48,11 +48,14 @@ The application creates a trie-based directory structure where:
 ### Asset Data JSON
 ```json
 {
-  "ID_BB_GLOBAL": "string",
-  "properties": {
-    "property1": "value1",
-    "property2": "value2"
-  }
+  "ID_BB_GLOBAL": "BBG001234567",
+  "ROWNUMBER": 123,
+  "FILEDATE": 20250504,
+  "ID_BB_YELLOWKEY": "123456",
+  "TICKER_AND_EXCH_CODE": "AAPL US",
+  "NAME": "Apple Inc",
+  "ID_BB_COMPANY": 12345,
+  "ID_BB_UNIQUE": "BBG001234567"
 }
 ```
 

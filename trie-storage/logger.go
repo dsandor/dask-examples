@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"strings"
 	"github.com/fatih/color"
 )
 
@@ -11,6 +13,8 @@ type Logger struct {
 	warning *color.Color
 	error   *color.Color
 	debug   *color.Color
+	progress *color.Color
+	bar     *color.Color
 }
 
 // NewLogger creates a new Logger instance
@@ -21,6 +25,8 @@ func NewLogger() *Logger {
 		warning: color.New(color.FgYellow),
 		error:   color.New(color.FgRed),
 		debug:   color.New(color.FgMagenta),
+		progress: color.New(color.FgHiCyan),
+		bar:     color.New(color.FgHiGreen),
 	}
 }
 
@@ -67,4 +73,26 @@ func (l *Logger) HighlightID(id string) string {
 // HighlightDate returns a highlighted version of a date
 func (l *Logger) HighlightDate(date string) string {
 	return color.New(color.FgHiYellow).Sprint(date)
+}
+
+// ProgressBar displays a progress bar with percentage
+func (l *Logger) ProgressBar(filename string, percentage float64) {
+	const width = 50
+	filled := int(float64(width) * percentage / 100)
+	empty := width - filled
+
+	// Create the progress bar
+	bar := fmt.Sprintf("[%s%s] %.1f%%",
+		strings.Repeat("█", filled),
+		strings.Repeat("░", empty),
+		percentage)
+
+	// Clear the current line and print the progress
+	fmt.Print("\r")
+	l.progress.Printf("Processing %s: %s", l.HighlightFile(filename), l.bar.Sprint(bar))
+}
+
+// ClearProgress clears the progress bar line
+func (l *Logger) ClearProgress() {
+	fmt.Print("\r\033[K") // Clear the current line
 } 

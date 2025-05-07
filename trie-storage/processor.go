@@ -27,6 +27,9 @@ type HistoryEntry struct {
 // HistoryData represents the history data structure
 type HistoryData map[string]map[string]HistoryEntry
 
+// AssetData represents the data structure for an asset
+type AssetData map[string]interface{}
+
 func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataProcessor {
 	return &DataProcessor{
 		config:   config,
@@ -86,12 +89,16 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 			return err
 		}
 
-		// Log progress every 5%
-		if expectedRows > 0 && (i+1)%(expectedRows/20) == 0 {
+		// Update progress every 1%
+		if expectedRows > 0 && (i+1)%(expectedRows/100) == 0 {
 			percentage := float64(i+1) / float64(expectedRows) * 100
-			p.logger.Info("Processing %s: %.1f%% complete", p.logger.HighlightFile(filePath), percentage)
+			p.logger.ProgressBar(filePath, percentage)
 		}
 	}
+
+	// Clear the progress bar and show completion
+	p.logger.ClearProgress()
+	p.logger.Success("Completed processing %s", p.logger.HighlightFile(filePath))
 
 	return nil
 }
@@ -184,11 +191,7 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 	}
 
 	// Load existing data if any
-	assetData := AssetData{
-		ID_BB_GLOBAL: id,
-		Properties:   make(map[string]interface{}),
-	}
-
+	assetData := make(AssetData)
 	existingDataPath := filepath.Join(triePath, "data.json")
 	if data, err := os.ReadFile(existingDataPath); err == nil {
 		if err := json.Unmarshal(data, &assetData); err != nil {
@@ -223,8 +226,8 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 			continue
 		}
 
-		// Update property value
-		assetData.Properties[columnName] = convertedValue
+		// Update property value directly in the root object
+		assetData[columnName] = convertedValue
 
 		// Update history if enabled
 		if p.config.EnableHistory {
