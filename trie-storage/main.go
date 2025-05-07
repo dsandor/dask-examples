@@ -15,50 +15,45 @@ type Config struct {
 	AnalysisFile    string
 	EnableHistory   bool
 	SkipFiles       int
+	Metadata        []Metadata
+	Analysis        *Analysis
 }
 
 func main() {
-	logger := NewLogger()
 	config := parseFlags()
-	
-	logger.Info("Starting application with configuration:")
-	logger.Info("Source Root: %s", logger.HighlightFile(config.SourceRoot))
-	logger.Info("Asset Destination Root: %s", logger.HighlightFile(config.AssetDestRoot))
-	logger.Info("Company Destination Root: %s", logger.HighlightFile(config.CompanyDestRoot))
-	logger.Info("Metadata File: %s", logger.HighlightFile(config.MetadataFile))
-	logger.Info("Analysis File: %s", logger.HighlightFile(config.AnalysisFile))
-	logger.Info("History Tracking: %s", logger.HighlightValue(config.EnableHistory))
-	logger.Info("Skip Files: %d", config.SkipFiles)
-	
-	// Load metadata
-	logger.Info("Loading metadata from %s", logger.HighlightFile(config.MetadataFile))
-	metadata, err := loadMetadata(config.MetadataFile)
-	if err != nil {
-		logger.Error("Failed to load metadata: %v", err)
-		os.Exit(1)
+	if err := loadConfiguration(config); err != nil {
+		log.Fatalf("Error loading configuration: %v", err)
 	}
-	logger.Success("Successfully loaded metadata with %d entries", len(metadata))
 
-	// Load analysis
-	logger.Info("Loading analysis from %s", logger.HighlightFile(config.AnalysisFile))
-	analysis, err := loadAnalysis(config.AnalysisFile)
-	if err != nil {
-		logger.Error("Failed to load analysis: %v", err)
-		os.Exit(1)
+	processor := NewDataProcessor(config)
+	if err := processor.ProcessAssetFiles(config.Analysis.AssetFiles); err != nil {
+		log.Fatalf("Error processing files: %v", err)
 	}
-	logger.Success("Successfully loaded analysis")
-
-	// Process asset files
-	logger.Info("Processing %d asset files", len(analysis.AssetFiles))
-	processor := NewDataProcessor(config, metadata, logger)
-	if err := processor.ProcessAssetFiles(analysis.AssetFiles); err != nil {
-		logger.Error("Failed to process asset files: %v", err)
-		os.Exit(1)
-	}
-	logger.Success("Successfully processed all asset files")
 }
 
-func parseFlags() Config {
+func loadConfiguration(config *Config) error {
+	// Load metadata
+	log.Printf("Loading metadata from %s", config.MetadataFile)
+	metadata, err := loadMetadata(config.MetadataFile)
+	if err != nil {
+		return err
+	}
+	config.Metadata = metadata
+	log.Printf("Successfully loaded metadata with %d entries", len(metadata))
+
+	// Load analysis
+	log.Printf("Loading analysis from %s", config.AnalysisFile)
+	analysis, err := loadAnalysis(config.AnalysisFile)
+	if err != nil {
+		return err
+	}
+	config.Analysis = analysis
+	log.Printf("Successfully loaded analysis")
+
+	return nil
+}
+
+func parseFlags() *Config {
 	sourceRoot := flag.String("source", "", "Source data root path")
 	assetDestRoot := flag.String("asset-dest", "", "Destination root path for asset files")
 	companyDestRoot := flag.String("company-dest", "", "Destination root path for company files")
@@ -72,7 +67,7 @@ func parseFlags() Config {
 		log.Fatal("Source root, asset destination root, and company destination root must be specified")
 	}
 
-	return Config{
+	return &Config{
 		SourceRoot:      *sourceRoot,
 		AssetDestRoot:   *assetDestRoot,
 		CompanyDestRoot: *companyDestRoot,

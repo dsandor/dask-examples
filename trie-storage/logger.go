@@ -60,9 +60,9 @@ func (l *Logger) HighlightValue(value interface{}) string {
 	return color.New(color.FgHiWhite, color.Bold).Sprint(value)
 }
 
-// HighlightFile returns a highlighted version of a file path
-func (l *Logger) HighlightFile(path string) string {
-	return color.New(color.FgHiBlue).Sprint(path)
+// HighlightFile highlights a file path in bright blue
+func (l *Logger) HighlightFile(file string) string {
+	return fmt.Sprintf("\033[1;36m%s\033[0m", file) // Cyan color for files
 }
 
 // HighlightID returns a highlighted version of an ID
