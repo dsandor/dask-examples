@@ -142,13 +142,18 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	errorChan := make(chan error, numWorkers)
 	progressChan := make(chan int, numWorkers*2) // Buffer for progress updates
 
-	// Start progress monitor
-	go p.monitorProgress(expectedRows, filePath, progressChan)
-
 	// Start worker goroutines
 	p.wg.Add(numWorkers)
 	processStart := time.Now()
 	p.logger.Info("Starting parallel processing with %s worker threads", p.logger.HighlightValue(numWorkers))
+
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		go p.worker(chunkChan, errorChan, progressChan)
+	}
+
+	// Start progress monitor
+	go p.monitorProgress(expectedRows, filePath, progressChan)
 
 	// Send chunks to workers
 	for _, chunk := range chunks {
