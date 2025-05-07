@@ -38,15 +38,19 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 
 func (p *DataProcessor) processAssetFile(filename string) error {
 	// Find the most recent file for this asset type
-	p.logger.Debug("Finding most recent file for %s", p.logger.HighlightFile(filename))
 	filePath, err := p.findMostRecentFile(filename)
 	if err != nil {
 		return err
 	}
 	p.logger.Info("Found most recent file: %s", p.logger.HighlightFile(filePath))
 
+	// Get expected row count from metadata
+	expectedRows := p.getExpectedRowCount(filename)
+	if expectedRows == 0 {
+		p.logger.Warning("No row count found in metadata for %s", filename)
+	}
+
 	// Read and process the CSV file
-	p.logger.Debug("Reading CSV file: %s", p.logger.HighlightFile(filePath))
 	records, err := p.readCSVFile(filePath)
 	if err != nil {
 		return err
@@ -58,12 +62,24 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		if err := p.processRecord(record, filePath); err != nil {
 			return err
 		}
-		if (i+1)%1000 == 0 {
-			p.logger.Info("Processed %d records", i+1)
+
+		// Log progress every 5%
+		if expectedRows > 0 && (i+1)%(expectedRows/20) == 0 {
+			percentage := float64(i+1) / float64(expectedRows) * 100
+			p.logger.Info("Processing %s: %.1f%% complete", p.logger.HighlightFile(filePath), percentage)
 		}
 	}
 
 	return nil
+}
+
+func (p *DataProcessor) getExpectedRowCount(filename string) int {
+	for _, meta := range p.metadata {
+		if meta.Filename == filename {
+			return meta.RowCount
+		}
+	}
+	return 0
 }
 
 func (p *DataProcessor) findMostRecentFile(filename string) (string, error) {
@@ -129,12 +145,11 @@ func (p *DataProcessor) processRecord(record []string, sourceFile string) error 
 		Properties:   make(map[string]interface{}),
 	}
 
-	existingDataPath := filepath.Join(triePath, id+".json")
+	existingDataPath := filepath.Join(triePath, "data.json")
 	if data, err := os.ReadFile(existingDataPath); err == nil {
 		if err := json.Unmarshal(data, &assetData); err != nil {
 			return err
 		}
-		p.logger.Debug("Loaded existing data for ID: %s", p.logger.HighlightID(id))
 	}
 
 	// Update properties
@@ -159,12 +174,7 @@ func (p *DataProcessor) processRecord(record []string, sourceFile string) error 
 		return err
 	}
 
-	if err := os.WriteFile(existingDataPath, data, 0644); err != nil {
-		return err
-	}
-
-	p.logger.Debug("Updated data for ID: %s", p.logger.HighlightID(id))
-	return nil
+	return os.WriteFile(existingDataPath, data, 0644)
 }
 
 func (p *DataProcessor) createTriePath(id string) string {
@@ -205,15 +215,7 @@ func (p *DataProcessor) updatePropertyHistory(id, propertyName, value, sourceFil
 		return err
 	}
 
-	if err := os.WriteFile(historyPath, data, 0644); err != nil {
-		return err
-	}
-
-	p.logger.Debug("Updated history for ID: %s, Property: %s, Date: %s",
-		p.logger.HighlightID(id),
-		p.logger.HighlightValue(propertyName),
-		p.logger.HighlightDate(effectiveDate))
-	return nil
+	return os.WriteFile(historyPath, data, 0644)
 }
 
 func (p *DataProcessor) getEffectiveDate(filePath string) string {
