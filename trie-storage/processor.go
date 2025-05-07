@@ -218,6 +218,11 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 			continue
 		}
 
+		// Skip null values
+		if convertedValue == nil {
+			continue
+		}
+
 		// Update property value
 		assetData.Properties[columnName] = convertedValue
 
@@ -239,22 +244,34 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 }
 
 func (p *DataProcessor) convertValue(value string, dataType string) (interface{}, error) {
+	// Check for null-like values
+	if p.isNullValue(value) {
+		return nil, nil
+	}
+
 	switch dataType {
 	case "integer":
-		if value == "" {
-			return nil, nil
-		}
 		return strconv.Atoi(value)
 	case "text":
 		return value, nil
 	case "float":
-		if value == "" {
-			return nil, nil
-		}
 		return strconv.ParseFloat(value, 64)
 	default:
 		return value, nil
 	}
+}
+
+// isNullValue checks if a value should be treated as null
+func (p *DataProcessor) isNullValue(value string) bool {
+	value = strings.TrimSpace(value)
+	return value == "" || 
+		strings.EqualFold(value, "N.A.") || 
+		strings.EqualFold(value, "n.a.") || 
+		strings.EqualFold(value, "null") ||
+		strings.EqualFold(value, "nil") ||
+		strings.EqualFold(value, "none") ||
+		strings.EqualFold(value, "N/A") ||
+		strings.EqualFold(value, "n/a")
 }
 
 func (p *DataProcessor) createTriePath(id string) string {
