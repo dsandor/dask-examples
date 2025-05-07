@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -57,9 +58,22 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	}
 	p.logger.Info("Read %d records from %s", len(records), p.logger.HighlightFile(filePath))
 
+	// Get column headers and metadata
+	headers := records[0]
+	fileMetadata := p.getFileMetadata(filename)
+	if fileMetadata == nil {
+		return fmt.Errorf("no metadata found for file %s", filename)
+	}
+
+	// Create column index to metadata mapping
+	columnMetadata := make(map[string]Column)
+	for _, col := range fileMetadata.Columns {
+		columnMetadata[col.Name] = col
+	}
+
 	// Process each record and store in trie structure
-	for i, record := range records {
-		if err := p.processRecord(record, filePath); err != nil {
+	for i, record := range records[1:] { // Skip header row
+		if err := p.processRecord(record, headers, columnMetadata, filePath); err != nil {
 			return err
 		}
 
@@ -70,6 +84,15 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		}
 	}
 
+	return nil
+}
+
+func (p *DataProcessor) getFileMetadata(filename string) *Metadata {
+	for _, meta := range p.metadata {
+		if meta.Filename == filename {
+			return &meta
+		}
+	}
 	return nil
 }
 
@@ -126,11 +149,23 @@ func (p *DataProcessor) readCSVFile(filePath string) ([][]string, error) {
 	return records, nil
 }
 
-func (p *DataProcessor) processRecord(record []string, sourceFile string) error {
-	// Assuming ID_BB_GLOBAL is the first column
-	id := record[0]
-	if id == "" {
-		return nil // Skip records without ID
+func (p *DataProcessor) processRecord(record []string, headers []string, columnMetadata map[string]Column, sourceFile string) error {
+	// Find ID_BB_GLOBAL column index
+	idIndex := -1
+	for i, header := range headers {
+		if header == "ID_BB_GLOBAL" {
+			idIndex = i
+			break
+		}
+	}
+
+	if idIndex == -1 {
+		return fmt.Errorf("ID_BB_GLOBAL column not found in headers")
+	}
+
+	id := record[idIndex]
+	if id == "" || !strings.HasPrefix(id, "BBG") {
+		return nil // Skip records without valid ID_BB_GLOBAL
 	}
 
 	// Create trie directory structure
@@ -154,16 +189,24 @@ func (p *DataProcessor) processRecord(record []string, sourceFile string) error 
 
 	// Update properties
 	for i, value := range record {
-		propertyName := p.getColumnName(i)
-		if propertyName == "" {
+		columnName := headers[i]
+		metadata, exists := columnMetadata[columnName]
+		if !exists {
+			continue
+		}
+
+		// Convert value based on data type
+		convertedValue, err := p.convertValue(value, metadata.DataType)
+		if err != nil {
+			p.logger.Warning("Failed to convert value for column %s: %v", columnName, err)
 			continue
 		}
 
 		// Update property value
-		assetData.Properties[propertyName] = value
+		assetData.Properties[columnName] = convertedValue
 
 		// Update property history
-		if err := p.updatePropertyHistory(id, propertyName, value, sourceFile); err != nil {
+		if err := p.updatePropertyHistory(id, columnName, convertedValue, sourceFile); err != nil {
 			return err
 		}
 	}
@@ -177,6 +220,25 @@ func (p *DataProcessor) processRecord(record []string, sourceFile string) error 
 	return os.WriteFile(existingDataPath, data, 0644)
 }
 
+func (p *DataProcessor) convertValue(value string, dataType string) (interface{}, error) {
+	switch dataType {
+	case "integer":
+		if value == "" {
+			return nil, nil
+		}
+		return strconv.Atoi(value)
+	case "text":
+		return value, nil
+	case "float":
+		if value == "" {
+			return nil, nil
+		}
+		return strconv.ParseFloat(value, 64)
+	default:
+		return value, nil
+	}
+}
+
 func (p *DataProcessor) createTriePath(id string) string {
 	path := p.config.AssetDestRoot
 	for _, char := range id {
@@ -185,13 +247,7 @@ func (p *DataProcessor) createTriePath(id string) string {
 	return path
 }
 
-func (p *DataProcessor) getColumnName(index int) string {
-	// This should be implemented based on your metadata structure
-	// For now, returning a placeholder
-	return fmt.Sprintf("column_%d", index)
-}
-
-func (p *DataProcessor) updatePropertyHistory(id, propertyName, value, sourceFile string) error {
+func (p *DataProcessor) updatePropertyHistory(id, propertyName string, value interface{}, sourceFile string) error {
 	historyPath := filepath.Join(p.createTriePath(id), "history.json")
 	
 	var history PropertyHistory
