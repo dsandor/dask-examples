@@ -98,6 +98,7 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	if numWorkers < 1 {
 		numWorkers = 1
 	}
+	p.logger.Info("Starting parallel processing with %d worker threads", p.logger.HighlightValue(numWorkers))
 
 	// Create channels for work distribution
 	chunkChan := make(chan RecordChunk, numWorkers)
