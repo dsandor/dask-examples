@@ -14,6 +14,7 @@ type Config struct {
 	MetadataFile    string
 	AnalysisFile    string
 	EnableHistory   bool
+	SkipFiles       int
 }
 
 func main() {
@@ -27,6 +28,7 @@ func main() {
 	logger.Info("Metadata File: %s", logger.HighlightFile(config.MetadataFile))
 	logger.Info("Analysis File: %s", logger.HighlightFile(config.AnalysisFile))
 	logger.Info("History Tracking: %s", logger.HighlightValue(config.EnableHistory))
+	logger.Info("Skip Files: %d", config.SkipFiles)
 	
 	// Load metadata
 	logger.Info("Loading metadata from %s", logger.HighlightFile(config.MetadataFile))
@@ -63,6 +65,7 @@ func parseFlags() Config {
 	metadataFile := flag.String("metadata", "metadata.json", "Path to metadata.json file")
 	analysisFile := flag.String("analysis", "analysis.json", "Path to analysis.json file")
 	enableHistory := flag.Bool("history", false, "Enable history tracking")
+	skipFiles := flag.Int("skip", 0, "Number of files to skip (for resuming processing)")
 	flag.Parse()
 
 	if *sourceRoot == "" || *assetDestRoot == "" || *companyDestRoot == "" {
@@ -76,6 +79,7 @@ func parseFlags() Config {
 		MetadataFile:    *metadataFile,
 		AnalysisFile:    *analysisFile,
 		EnableHistory:   *enableHistory,
+		SkipFiles:       *skipFiles,
 	}
 }
 

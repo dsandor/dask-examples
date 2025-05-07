@@ -13,6 +13,7 @@ A Go application that processes gzipped CSV files and stores them in a trie-base
 - Real-time progress tracking with visual progress bar
 - Colorful console output for better visibility
 - Configurable metadata and analysis file locations
+- Ability to resume processing from a specific file
 
 ## Requirements
 
@@ -20,6 +21,7 @@ A Go application that processes gzipped CSV files and stores them in a trie-base
 
 ## Usage
 
+### Basic Usage
 ```bash
 go run . -source /path/to/source \
          -asset-dest /path/to/asset/destination \
@@ -27,6 +29,15 @@ go run . -source /path/to/source \
          -metadata /path/to/metadata.json \
          -analysis /path/to/analysis.json \
          -history
+```
+
+### Resuming Processing
+To resume processing from a specific point (e.g., after processing 5 files):
+```bash
+go run . -source /path/to/source \
+         -asset-dest /path/to/asset/destination \
+         -company-dest /path/to/company/destination \
+         -skip 5
 ```
 
 ### Command Line Arguments
@@ -37,6 +48,7 @@ go run . -source /path/to/source \
 - `-metadata`: Path to metadata.json file (default: "metadata.json")
 - `-analysis`: Path to analysis.json file (default: "analysis.json")
 - `-history`: Enable history tracking (default: false)
+- `-skip`: Number of files to skip (for resuming processing) (default: 0)
 
 ## Performance Features
 
@@ -53,6 +65,7 @@ Real-time progress monitoring with visual feedback:
 - Updates in-place without cluttering the console
 - Percentage updates every 1% of completion
 - Color-coded output for better visibility
+- File-level progress tracking with skip support
 
 ## Data Structure
 
@@ -111,3 +124,4 @@ The application provides colorful console output to help track progress and iden
 - Progress tracking is synchronized to prevent display issues
 - File operations are thread-safe to prevent data corruption
 - Null values are automatically filtered out to reduce storage
+- Processing can be resumed from any point using the skip feature

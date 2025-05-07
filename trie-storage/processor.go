@@ -50,12 +50,33 @@ func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataP
 }
 
 func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
+	totalFiles := len(assetFiles)
+	processedFiles := 0
+	skippedFiles := 0
+
 	for _, filename := range assetFiles {
-		p.logger.Info("Processing asset file: %s", p.logger.HighlightFile(filename))
+		if skippedFiles < p.config.SkipFiles {
+			p.logger.Info("Skipping file %d/%d: %s", 
+				skippedFiles+1, 
+				p.config.SkipFiles,
+				p.logger.HighlightFile(filename))
+			skippedFiles++
+			continue
+		}
+
+		processedFiles++
+		p.logger.Info("Processing file %d/%d: %s", 
+			processedFiles, 
+			totalFiles-p.config.SkipFiles,
+			p.logger.HighlightFile(filename))
+
 		if err := p.processAssetFile(filename); err != nil {
 			return fmt.Errorf("error processing asset file %s: %v", filename, err)
 		}
-		p.logger.Success("Completed processing asset file: %s", p.logger.HighlightFile(filename))
+		p.logger.Success("Completed processing file %d/%d: %s", 
+			processedFiles, 
+			totalFiles-p.config.SkipFiles,
+			p.logger.HighlightFile(filename))
 	}
 	return nil
 }
@@ -148,30 +169,48 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	p.logger.Info("Starting parallel processing with %s worker threads", p.logger.HighlightValue(numWorkers))
 
 	// Start workers
+	workerStart := time.Now()
 	for i := 0; i < numWorkers; i++ {
 		go p.worker(chunkChan, errorChan, progressChan)
 	}
+	workerDuration := time.Since(workerStart)
+	p.logger.Info("Started %d worker goroutines in %s", p.logger.HighlightValue(numWorkers), p.logger.HighlightValue(workerDuration))
 
 	// Start progress monitor
+	monitorStart := time.Now()
 	go p.monitorProgress(expectedRows, filePath, progressChan)
+	monitorDuration := time.Since(monitorStart)
+	p.logger.Info("Started progress monitor in %s", p.logger.HighlightValue(monitorDuration))
 
 	// Send chunks to workers
+	chunkSendStart := time.Now()
+	p.logger.Info("Sending %d chunks to workers...", p.logger.HighlightValue(len(chunks)))
 	for _, chunk := range chunks {
 		chunkChan <- chunk
 	}
 	close(chunkChan)
+	chunkSendDuration := time.Since(chunkSendStart)
+	p.logger.Info("Sent all chunks to workers in %s", p.logger.HighlightValue(chunkSendDuration))
 
 	// Wait for all workers to complete
+	waitStart := time.Now()
+	p.logger.Info("Waiting for workers to complete processing...")
 	p.wg.Wait()
+	waitDuration := time.Since(waitStart)
+	p.logger.Info("All workers completed in %s", p.logger.HighlightValue(waitDuration))
+
 	close(errorChan)
 	close(progressChan)
 
 	// Check for any errors
+	errorCheckStart := time.Now()
 	for err := range errorChan {
 		if err != nil {
 			return err
 		}
 	}
+	errorCheckDuration := time.Since(errorCheckStart)
+	p.logger.Info("Error check completed in %s", p.logger.HighlightValue(errorCheckDuration))
 
 	processDuration := time.Since(processStart)
 	totalDuration := time.Since(startTime)
