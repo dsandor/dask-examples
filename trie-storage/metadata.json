@@ -1,0 +1,38 @@
+[
+    {
+      "filename": "BEST_AMER_OUT",
+      "relativePath": "BEST_AMER_OUT/best_amer.out.20250504.csv.gz",
+      "effectiveDate": "20250504",
+      "rowCount": 622401,
+      "columns": [
+        {
+          "name": "ROWNUMBER",
+          "dataType": "integer"
+        },
+        {
+          "name": "FILEDATE",
+          "dataType": "integer"
+        },
+        {
+          "name": "ID_BB_YELLOWKEY",
+          "dataType": "text"
+        },
+        {
+          "name": "TICKER_AND_EXCH_CODE",
+          "dataType": "text"
+        },
+        {
+          "name": "NAME",
+          "dataType": "text"
+        },
+        {
+          "name": "ID_BB_COMPANY",
+          "dataType": "integer"
+        },
+        {
+          "name": "ID_BB_UNIQUE",
+          "dataType": "text"
+        }
+      ]
+    }
+  ]
