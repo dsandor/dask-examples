@@ -54,11 +54,14 @@ func (p *DataProcessor) ProcessAssetFiles(files []string) error {
 	skippedFiles := 0
 
 	for _, filename := range files {
+		// Construct the full file path using the source root
+		fullPath := filepath.Join(p.config.SourceRoot, filename)
+
 		if skippedFiles < p.config.SkipFiles {
 			p.logger.Info("Skipping file %d/%d: %s", 
 				skippedFiles+1, 
 				p.config.SkipFiles,
-				p.logger.HighlightFile(filename))
+				p.logger.HighlightFile(fullPath))
 			skippedFiles++
 			continue
 		}
@@ -67,15 +70,15 @@ func (p *DataProcessor) ProcessAssetFiles(files []string) error {
 		p.logger.Info("Processing file %d/%d: %s", 
 			processedFiles, 
 			totalFiles-p.config.SkipFiles,
-			p.logger.HighlightFile(filename))
+			p.logger.HighlightFile(fullPath))
 
-		if err := p.processAssetFile(filename); err != nil {
+		if err := p.processAssetFile(fullPath); err != nil {
 			return fmt.Errorf("error processing asset file %s: %v", filename, err)
 		}
 		p.logger.Success("Completed processing file %d/%d: %s", 
 			processedFiles, 
 			totalFiles-p.config.SkipFiles,
-			p.logger.HighlightFile(filename))
+			p.logger.HighlightFile(fullPath))
 	}
 	return nil
 }
