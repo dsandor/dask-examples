@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,41 +14,52 @@ import (
 type DataProcessor struct {
 	config   Config
 	metadata []Metadata
+	logger   *Logger
 }
 
-func NewDataProcessor(config Config, metadata []Metadata) *DataProcessor {
+func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataProcessor {
 	return &DataProcessor{
 		config:   config,
 		metadata: metadata,
+		logger:   logger,
 	}
 }
 
 func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 	for _, filename := range assetFiles {
+		p.logger.Info("Processing asset file: %s", p.logger.HighlightFile(filename))
 		if err := p.processAssetFile(filename); err != nil {
 			return fmt.Errorf("error processing asset file %s: %v", filename, err)
 		}
+		p.logger.Success("Completed processing asset file: %s", p.logger.HighlightFile(filename))
 	}
 	return nil
 }
 
 func (p *DataProcessor) processAssetFile(filename string) error {
 	// Find the most recent file for this asset type
+	p.logger.Debug("Finding most recent file for %s", p.logger.HighlightFile(filename))
 	filePath, err := p.findMostRecentFile(filename)
 	if err != nil {
 		return err
 	}
+	p.logger.Info("Found most recent file: %s", p.logger.HighlightFile(filePath))
 
 	// Read and process the CSV file
+	p.logger.Debug("Reading CSV file: %s", p.logger.HighlightFile(filePath))
 	records, err := p.readCSVFile(filePath)
 	if err != nil {
 		return err
 	}
+	p.logger.Info("Read %d records from %s", len(records), p.logger.HighlightFile(filePath))
 
 	// Process each record and store in trie structure
-	for _, record := range records {
+	for i, record := range records {
 		if err := p.processRecord(record, filePath); err != nil {
 			return err
+		}
+		if (i+1)%1000 == 0 {
+			p.logger.Info("Processed %d records", i+1)
 		}
 	}
 
@@ -124,6 +134,7 @@ func (p *DataProcessor) processRecord(record []string, sourceFile string) error 
 		if err := json.Unmarshal(data, &assetData); err != nil {
 			return err
 		}
+		p.logger.Debug("Loaded existing data for ID: %s", p.logger.HighlightID(id))
 	}
 
 	// Update properties
@@ -148,7 +159,12 @@ func (p *DataProcessor) processRecord(record []string, sourceFile string) error 
 		return err
 	}
 
-	return os.WriteFile(existingDataPath, data, 0644)
+	if err := os.WriteFile(existingDataPath, data, 0644); err != nil {
+		return err
+	}
+
+	p.logger.Debug("Updated data for ID: %s", p.logger.HighlightID(id))
+	return nil
 }
 
 func (p *DataProcessor) createTriePath(id string) string {
@@ -175,11 +191,12 @@ func (p *DataProcessor) updatePropertyHistory(id, propertyName, value, sourceFil
 		}
 	}
 
+	effectiveDate := p.getEffectiveDate(sourceFile)
 	// Add new history entry
 	history.History = append(history.History, History{
 		Value:         value,
 		SourceFile:    sourceFile,
-		EffectiveDate: p.getEffectiveDate(sourceFile),
+		EffectiveDate: effectiveDate,
 	})
 
 	// Save updated history
@@ -188,7 +205,15 @@ func (p *DataProcessor) updatePropertyHistory(id, propertyName, value, sourceFil
 		return err
 	}
 
-	return os.WriteFile(historyPath, data, 0644)
+	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+		return err
+	}
+
+	p.logger.Debug("Updated history for ID: %s, Property: %s, Date: %s",
+		p.logger.HighlightID(id),
+		p.logger.HighlightValue(propertyName),
+		p.logger.HighlightDate(effectiveDate))
+	return nil
 }
 
 func (p *DataProcessor) getEffectiveDate(filePath string) string {

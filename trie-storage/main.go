@@ -5,41 +5,61 @@ import (
 	"flag"
 	"log"
 	"os"
-	"path/filepath"
 )
 
 type Config struct {
 	SourceRoot      string
 	AssetDestRoot   string
 	CompanyDestRoot string
+	MetadataFile    string
+	AnalysisFile    string
 }
 
 func main() {
+	logger := NewLogger()
 	config := parseFlags()
 	
+	logger.Info("Starting application with configuration:")
+	logger.Info("Source Root: %s", logger.HighlightFile(config.SourceRoot))
+	logger.Info("Asset Destination Root: %s", logger.HighlightFile(config.AssetDestRoot))
+	logger.Info("Company Destination Root: %s", logger.HighlightFile(config.CompanyDestRoot))
+	logger.Info("Metadata File: %s", logger.HighlightFile(config.MetadataFile))
+	logger.Info("Analysis File: %s", logger.HighlightFile(config.AnalysisFile))
+	
 	// Load metadata
-	metadata, err := loadMetadata()
+	logger.Info("Loading metadata from %s", logger.HighlightFile(config.MetadataFile))
+	metadata, err := loadMetadata(config.MetadataFile)
 	if err != nil {
-		log.Fatalf("Failed to load metadata: %v", err)
+		logger.Error("Failed to load metadata: %v", err)
+		os.Exit(1)
 	}
+	logger.Success("Successfully loaded metadata with %d entries", len(metadata))
 
 	// Load analysis
-	analysis, err := loadAnalysis()
+	logger.Info("Loading analysis from %s", logger.HighlightFile(config.AnalysisFile))
+	analysis, err := loadAnalysis(config.AnalysisFile)
 	if err != nil {
-		log.Fatalf("Failed to load analysis: %v", err)
+		logger.Error("Failed to load analysis: %v", err)
+		os.Exit(1)
 	}
+	logger.Success("Successfully loaded analysis")
 
 	// Process asset files
-	processor := NewDataProcessor(config, metadata)
+	logger.Info("Processing %d asset files", len(analysis.AssetFiles))
+	processor := NewDataProcessor(config, metadata, logger)
 	if err := processor.ProcessAssetFiles(analysis.AssetFiles); err != nil {
-		log.Fatalf("Failed to process asset files: %v", err)
+		logger.Error("Failed to process asset files: %v", err)
+		os.Exit(1)
 	}
+	logger.Success("Successfully processed all asset files")
 }
 
 func parseFlags() Config {
 	sourceRoot := flag.String("source", "", "Source data root path")
 	assetDestRoot := flag.String("asset-dest", "", "Destination root path for asset files")
 	companyDestRoot := flag.String("company-dest", "", "Destination root path for company files")
+	metadataFile := flag.String("metadata", "metadata.json", "Path to metadata.json file")
+	analysisFile := flag.String("analysis", "analysis.json", "Path to analysis.json file")
 	flag.Parse()
 
 	if *sourceRoot == "" || *assetDestRoot == "" || *companyDestRoot == "" {
@@ -50,11 +70,13 @@ func parseFlags() Config {
 		SourceRoot:      *sourceRoot,
 		AssetDestRoot:   *assetDestRoot,
 		CompanyDestRoot: *companyDestRoot,
+		MetadataFile:    *metadataFile,
+		AnalysisFile:    *analysisFile,
 	}
 }
 
-func loadMetadata() ([]Metadata, error) {
-	data, err := os.ReadFile("metadata.json")
+func loadMetadata(filePath string) ([]Metadata, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +89,8 @@ func loadMetadata() ([]Metadata, error) {
 	return metadata, nil
 }
 
-func loadAnalysis() (*Analysis, error) {
-	data, err := os.ReadFile("analysis.json")
+func loadAnalysis(filePath string) (*Analysis, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
