@@ -54,8 +54,11 @@ func (p *DataProcessor) ProcessAssetFiles(files []string) error {
 	skippedFiles := 0
 
 	for _, filename := range files {
-		// Construct the full file path using the source root
-		fullPath := filepath.Join(p.config.SourceRoot, filename)
+		// Find the most recent data file in the directory
+		fullPath, err := p.findMostRecentFile(filename)
+		if err != nil {
+			return fmt.Errorf("error finding most recent file for %s: %v", filename, err)
+		}
 
 		if skippedFiles < p.config.SkipFiles {
 			p.logger.Info("Skipping file %d/%d: %s", 
