@@ -27,9 +27,6 @@ type HistoryEntry struct {
 // HistoryData represents the history data structure
 type HistoryData map[string]map[string]HistoryEntry
 
-// AssetData represents the data structure for an asset
-type AssetData map[string]interface{}
-
 func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataProcessor {
 	return &DataProcessor{
 		config:   config,
@@ -192,6 +189,7 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 
 	// Load existing data if any
 	assetData := make(AssetData)
+	assetData["ID_BB_GLOBAL"] = id
 	existingDataPath := filepath.Join(triePath, "data.json")
 	if data, err := os.ReadFile(existingDataPath); err == nil {
 		if err := json.Unmarshal(data, &assetData); err != nil {

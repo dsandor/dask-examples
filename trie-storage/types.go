@@ -30,7 +30,4 @@ type History struct {
 	EffectiveDate string     `json:"effectiveDate"`
 }
 
-type AssetData struct {
-	ID_BB_GLOBAL string                 `json:"ID_BB_GLOBAL"`
-	Properties   map[string]interface{} `json:"properties"`
-} 
+type AssetData map[string]interface{} 
