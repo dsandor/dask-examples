@@ -1,0 +1,20 @@
+{
+  "ID_BB_GLOBAL": {
+    "csv": {
+      "file": "test_20240101.csv.gz",
+      "value": "BBG000002"
+    }
+  },
+  "NAME": {
+    "csv": {
+      "file": "test_20240101.csv.gz",
+      "value": "Test Company 2"
+    }
+  },
+  "VALUE": {
+    "csv": {
+      "file": "test_20240101.csv.gz",
+      "value": 200.75
+    }
+  }
+}

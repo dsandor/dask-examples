@@ -20,7 +20,7 @@ type Config struct {
 func main() {
 	logger := NewLogger()
 	config := parseFlags()
-	
+
 	logger.Info("Starting application with configuration:")
 	logger.Info("Source Root: %s", logger.HighlightFile(config.SourceRoot))
 	logger.Info("Asset Destination Root: %s", logger.HighlightFile(config.AssetDestRoot))
@@ -29,7 +29,7 @@ func main() {
 	logger.Info("Analysis File: %s", logger.HighlightFile(config.AnalysisFile))
 	logger.Info("History Tracking: %s", logger.HighlightValue(config.EnableHistory))
 	logger.Info("Skip Files: %d", config.SkipFiles)
-	
+
 	// Load metadata
 	logger.Info("Loading metadata from %s", logger.HighlightFile(config.MetadataFile))
 	metadata, err := loadMetadata(config.MetadataFile)
@@ -50,7 +50,11 @@ func main() {
 
 	// Process asset files
 	logger.Info("Processing %d asset files", len(analysis.AssetFiles))
-	processor := NewDataProcessor(config, metadata, logger)
+	processor, err := NewDataProcessor(config, metadata, logger)
+	if err != nil {
+		logger.Error("Failed to initialize data processor: %v", err)
+		os.Exit(1)
+	}
 	if err := processor.ProcessAssetFiles(analysis.AssetFiles); err != nil {
 		logger.Error("Failed to process asset files: %v", err)
 		os.Exit(1)
@@ -109,4 +113,4 @@ func loadAnalysis(filePath string) (*Analysis, error) {
 	}
 
 	return &analysis, nil
-} 
+}

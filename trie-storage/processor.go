@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,11 +26,14 @@ type RecordChunk struct {
 }
 
 type DataProcessor struct {
-	config   Config
-	metadata []Metadata
-	logger   *Logger
-	wg       sync.WaitGroup
-	mu       sync.Mutex
+	config         Config
+	metadata       []Metadata
+	logger         *Logger
+	processedFiles *ProcessedFiles
+	fileChan       chan string
+	errorChan      chan error
+	wg             sync.WaitGroup
+	mu             sync.Mutex
 }
 
 // HistoryEntry represents a single history entry with file and value
@@ -41,12 +45,43 @@ type HistoryEntry struct {
 // HistoryData represents the history data structure
 type HistoryData map[string]map[string]HistoryEntry
 
-func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataProcessor {
-	return &DataProcessor{
-		config:   config,
-		metadata: metadata,
-		logger:   logger,
+// ProcessedFiles tracks which files have been successfully processed
+type ProcessedFiles struct {
+	mu    sync.Mutex
+	files map[string]bool
+	path  string
+}
+
+func NewProcessedFiles(checkpointPath string) (*ProcessedFiles, error) {
+	pf := &ProcessedFiles{
+		files: make(map[string]bool),
+		path:  checkpointPath,
 	}
+
+	// Load existing checkpoint if it exists
+	if data, err := os.ReadFile(checkpointPath); err == nil {
+		if err := json.Unmarshal(data, &pf.files); err != nil {
+			return nil, fmt.Errorf("error loading checkpoint: %v", err)
+		}
+	}
+
+	return pf, nil
+}
+
+func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) (*DataProcessor, error) {
+	processedFiles, err := NewProcessedFiles(filepath.Join(config.AssetDestRoot, "processed_files.json"))
+	if err != nil {
+		return nil, fmt.Errorf("error initializing processed files tracking: %v", err)
+	}
+
+	return &DataProcessor{
+		config:         config,
+		metadata:       metadata,
+		logger:         logger,
+		processedFiles: processedFiles,
+		fileChan:       make(chan string, runtime.NumCPU()),
+		errorChan:      make(chan error, runtime.NumCPU()),
+	}, nil
 }
 
 func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
@@ -54,6 +89,19 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 	processedFiles := 0
 	skippedFiles := 0
 
+	// Start worker goroutines
+	numWorkers := runtime.NumCPU()
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	p.logger.Info("Starting %d worker goroutines", numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		p.wg.Add(1)
+		go p.fileWorker()
+	}
+
+	// Send files to workers
 	for _, filename := range assetFiles {
 		if skippedFiles < p.config.SkipFiles {
 			p.logger.Info("Skipping file %d/%d: %s",
@@ -64,21 +112,53 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 			continue
 		}
 
+		// Skip already processed files
+		if p.processedFiles.IsProcessed(filename) {
+			p.logger.Info("Skipping already processed file: %s", p.logger.HighlightFile(filename))
+			continue
+		}
+
 		processedFiles++
-		p.logger.Info("Processing file %d/%d: %s",
+		p.logger.Info("Queueing file %d/%d: %s",
 			processedFiles,
 			totalFiles-p.config.SkipFiles,
 			p.logger.HighlightFile(filename))
 
-		if err := p.processAssetFile(filename); err != nil {
-			return fmt.Errorf("error processing asset file %s: %v", filename, err)
-		}
-		p.logger.Success("Completed processing file %d/%d: %s",
-			processedFiles,
-			totalFiles-p.config.SkipFiles,
-			p.logger.HighlightFile(filename))
+		p.fileChan <- filename
 	}
+
+	// Close channel after all files are queued
+	close(p.fileChan)
+
+	// Wait for all workers to complete
+	p.logger.Info("Waiting for workers to complete processing...")
+	p.wg.Wait()
+
+	// Check for any errors
+	close(p.errorChan)
+	for err := range p.errorChan {
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func (p *DataProcessor) fileWorker() {
+	defer p.wg.Done()
+
+	for filename := range p.fileChan {
+		if err := p.processAssetFile(filename); err != nil {
+			p.errorChan <- fmt.Errorf("error processing file %s: %v", filename, err)
+			continue
+		}
+
+		// Mark file as processed only after successful completion
+		if err := p.processedFiles.MarkProcessed(filename); err != nil {
+			p.errorChan <- fmt.Errorf("error marking file %s as processed: %v", filename, err)
+		}
+	}
 }
 
 func (p *DataProcessor) processAssetFile(filename string) error {
@@ -97,28 +177,37 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		p.logger.Warning("No row count found in metadata for %s", filename)
 	}
 
-	// Read and process the CSV file
-	readStart := time.Now()
-	records, err := p.readCSVFile(filePath)
+	// Open and prepare the file for reading
+	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
-	readDuration := time.Since(readStart)
+	defer file.Close()
 
-	// Skip processing if no records were found
-	if len(records) == 0 {
-		p.logger.Warning("Skipping processing of empty file: %s", p.logger.HighlightFile(filePath))
+	gzReader, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzReader.Close()
+
+	reader := csv.NewReader(gzReader)
+
+	// Read headers
+	headers, err := reader.Read()
+	if err != nil {
+		if err == io.EOF {
+			p.logger.Warning("CSV file is empty: %s", filePath)
+			return nil
+		}
+		return err
+	}
+
+	if len(headers) == 0 {
+		p.logger.Warning("CSV file has no headers: %s", filePath)
 		return nil
 	}
 
-	p.logger.Info("Read %d records from %s in %s",
-		len(records),
-		p.logger.HighlightFile(filePath),
-		p.logger.HighlightValue(readDuration))
-
-	// Get column headers and metadata
-	metaStart := time.Now()
-	headers := records[0]
+	// Get file metadata
 	fileMetadata := p.getFileMetadata(filename)
 	if fileMetadata == nil {
 		return fmt.Errorf("no metadata found for file %s", filename)
@@ -129,143 +218,38 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 	for _, col := range fileMetadata.Columns {
 		columnMetadata[col.Name] = col
 	}
-	metaDuration := time.Since(metaStart)
-	p.logger.Info("Processed metadata in %s", p.logger.HighlightValue(metaDuration))
 
-	// Calculate number of workers (use number of CPU cores)
-	numWorkers := runtime.NumCPU()
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
-
-	// Calculate chunk size
-	chunkSize := (len(records) - 1) / numWorkers
-	if chunkSize < 1 {
-		chunkSize = 1
-	}
-
-	// Pre-allocate chunks to avoid allocations during processing
-	chunks := make([]RecordChunk, 0, numWorkers)
-	for i := 1; i < len(records); i += chunkSize {
-		end := i + chunkSize
-		if end > len(records) {
-			end = len(records)
-		}
-
-		chunks = append(chunks, RecordChunk{
-			Records:        records[i:end],
-			Headers:        headers,
-			ColumnMetadata: columnMetadata,
-			SourceFile:     filePath,
-			StartIndex:     i,
-		})
-	}
-	chunkDuration := time.Since(metaStart)
-	p.logger.Info("Prepared %d chunks for parallel processing in %s",
-		len(chunks),
-		p.logger.HighlightValue(chunkDuration))
-
-	// Create channels for work distribution
-	chunkChan := make(chan RecordChunk, numWorkers)
-	errorChan := make(chan error, numWorkers)
-	progressChan := make(chan int, numWorkers*2) // Buffer for progress updates
-
-	// Start worker goroutines
-	p.wg.Add(numWorkers)
-	processStart := time.Now()
-	p.logger.Info("Starting parallel processing with %s worker threads", p.logger.HighlightValue(numWorkers))
-
-	// Start workers
-	workerStart := time.Now()
-	for i := 0; i < numWorkers; i++ {
-		go p.worker(chunkChan, errorChan, progressChan)
-	}
-	workerDuration := time.Since(workerStart)
-	p.logger.Info("Started %d worker goroutines in %s", p.logger.HighlightValue(numWorkers), p.logger.HighlightValue(workerDuration))
-
-	// Start progress monitor
-	monitorStart := time.Now()
-	go p.monitorProgress(expectedRows, filePath, progressChan)
-	monitorDuration := time.Since(monitorStart)
-	p.logger.Info("Started progress monitor in %s", p.logger.HighlightValue(monitorDuration))
-
-	// Send chunks to workers
-	chunkSendStart := time.Now()
-	p.logger.Info("Sending %d chunks to workers...", p.logger.HighlightValue(len(chunks)))
-	for _, chunk := range chunks {
-		chunkChan <- chunk
-	}
-	close(chunkChan)
-	chunkSendDuration := time.Since(chunkSendStart)
-	p.logger.Info("Sent all chunks to workers in %s", p.logger.HighlightValue(chunkSendDuration))
-
-	// Wait for all workers to complete
-	waitStart := time.Now()
-	p.logger.Info("Waiting for workers to complete processing...")
-	p.wg.Wait()
-	waitDuration := time.Since(waitStart)
-	p.logger.Info("All workers completed in %s", p.logger.HighlightValue(waitDuration))
-
-	close(errorChan)
-	close(progressChan)
-
-	// Check for any errors
-	errorCheckStart := time.Now()
-	for err := range errorChan {
+	// Process records line by line
+	processedRows := 0
+	for {
+		record, err := reader.Read()
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return err
 		}
+
+		if err := p.processRecord(record, headers, columnMetadata, filePath); err != nil {
+			return err
+		}
+
+		processedRows++
+		if expectedRows > 0 && processedRows%1000 == 0 {
+			percentage := int(float64(processedRows) / float64(expectedRows) * 100)
+			p.mu.Lock()
+			p.logger.ProgressBar(filePath, float64(percentage))
+			p.mu.Unlock()
+		}
 	}
-	errorCheckDuration := time.Since(errorCheckStart)
-	p.logger.Info("Error check completed in %s", p.logger.HighlightValue(errorCheckDuration))
 
-	processDuration := time.Since(processStart)
 	totalDuration := time.Since(startTime)
-
-	// Clear the progress bar and show completion
-	p.logger.ClearProgress()
-	p.logger.Success("Completed processing %s in %s (Read: %s, Setup: %s, Process: %s)",
+	p.logger.Success("Completed processing %s in %s (Processed %d records)",
 		p.logger.HighlightFile(filePath),
 		p.logger.HighlightValue(totalDuration),
-		p.logger.HighlightValue(readDuration),
-		p.logger.HighlightValue(chunkDuration),
-		p.logger.HighlightValue(processDuration))
+		processedRows)
 
 	return nil
-}
-
-func (p *DataProcessor) monitorProgress(expectedRows int, filePath string, progressChan <-chan int) {
-	processedRows := 0
-	lastPercentage := 0
-
-	for count := range progressChan {
-		processedRows += count
-		if expectedRows > 0 {
-			percentage := int(float64(processedRows) / float64(expectedRows) * 100)
-			if percentage > lastPercentage {
-				lastPercentage = percentage
-				p.mu.Lock()
-				p.logger.ProgressBar(filePath, float64(percentage))
-				p.mu.Unlock()
-			}
-		}
-	}
-}
-
-func (p *DataProcessor) worker(chunkChan <-chan RecordChunk, errorChan chan<- error, progressChan chan<- int) {
-	defer p.wg.Done()
-
-	for chunk := range chunkChan {
-		processedCount := 0
-		for _, record := range chunk.Records {
-			if err := p.processRecord(record, chunk.Headers, chunk.ColumnMetadata, chunk.SourceFile); err != nil {
-				errorChan <- err
-				return
-			}
-			processedCount++
-		}
-		progressChan <- processedCount
-	}
 }
 
 func (p *DataProcessor) getFileMetadata(filename string) *Metadata {
@@ -308,37 +292,39 @@ func (p *DataProcessor) findMostRecentFile(filename string) (string, error) {
 	return filepath.Join(dir, files[0]), nil
 }
 
-func (p *DataProcessor) readCSVFile(filePath string) ([][]string, error) {
-	file, err := os.Open(filePath)
+func (p *DataProcessor) getEffectiveDate(filePath string) string {
+	// Extract date from filename (YYYYMMDD format)
+	base := filepath.Base(filePath)
+	parts := strings.Split(base, ".")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2]
+	}
+	return ""
+}
+
+func (pf *ProcessedFiles) IsProcessed(filename string) bool {
+	pf.mu.Lock()
+	defer pf.mu.Unlock()
+	return pf.files[filename]
+}
+
+func (pf *ProcessedFiles) MarkProcessed(filename string) error {
+	pf.mu.Lock()
+	pf.files[filename] = true
+	pf.mu.Unlock()
+	return pf.save()
+}
+
+func (pf *ProcessedFiles) save() error {
+	pf.mu.Lock()
+	defer pf.mu.Unlock()
+
+	data, err := json.MarshalIndent(pf.files, "", "  ")
 	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	gzReader, err := gzip.NewReader(file)
-	if err != nil {
-		return nil, err
-	}
-	defer gzReader.Close()
-
-	reader := csv.NewReader(gzReader)
-	records, err := reader.ReadAll()
-	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// Check if file is empty or has no headers
-	if len(records) == 0 {
-		p.logger.Warning("CSV file is empty: %s", filePath)
-		return [][]string{}, nil
-	}
-
-	if len(records[0]) == 0 {
-		p.logger.Warning("CSV file has no headers: %s", filePath)
-		return [][]string{}, nil
-	}
-
-	return records, nil
+	return os.WriteFile(pf.path, data, 0644)
 }
 
 func (p *DataProcessor) processRecord(record []string, headers []string, columnMetadata map[string]Column, sourceFile string) error {
@@ -492,14 +478,4 @@ func (p *DataProcessor) updatePropertyHistory(id, propertyName string, value int
 	}
 
 	return os.WriteFile(historyPath, data, 0644)
-}
-
-func (p *DataProcessor) getEffectiveDate(filePath string) string {
-	// Extract date from filename (YYYYMMDD format)
-	base := filepath.Base(filePath)
-	parts := strings.Split(base, ".")
-	if len(parts) >= 2 {
-		return parts[len(parts)-2]
-	}
-	return ""
 }

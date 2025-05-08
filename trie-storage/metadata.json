@@ -34,5 +34,23 @@
           "dataType": "text"
         }
       ]
+    },
+    {
+      "filename": "test_asset.csv",
+      "rowCount": 100,
+      "columns": [
+        {
+          "name": "ID_BB_GLOBAL",
+          "dataType": "text"
+        },
+        {
+          "name": "NAME",
+          "dataType": "text"
+        },
+        {
+          "name": "VALUE",
+          "dataType": "float"
+        }
+      ]
     }
   ]
