@@ -7,21 +7,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"runtime"
 	"time"
 )
 
 // RecordChunk represents a chunk of records to be processed
 type RecordChunk struct {
-	Records       [][]string
-	Headers       []string
+	Records        [][]string
+	Headers        []string
 	ColumnMetadata map[string]Column
-	SourceFile    string
-	StartIndex    int
+	SourceFile     string
+	StartIndex     int
 }
 
 type DataProcessor struct {
@@ -56,8 +56,8 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 
 	for _, filename := range assetFiles {
 		if skippedFiles < p.config.SkipFiles {
-			p.logger.Info("Skipping file %d/%d: %s", 
-				skippedFiles+1, 
+			p.logger.Info("Skipping file %d/%d: %s",
+				skippedFiles+1,
 				p.config.SkipFiles,
 				p.logger.HighlightFile(filename))
 			skippedFiles++
@@ -65,16 +65,16 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 		}
 
 		processedFiles++
-		p.logger.Info("Processing file %d/%d: %s", 
-			processedFiles, 
+		p.logger.Info("Processing file %d/%d: %s",
+			processedFiles,
 			totalFiles-p.config.SkipFiles,
 			p.logger.HighlightFile(filename))
 
 		if err := p.processAssetFile(filename); err != nil {
 			return fmt.Errorf("error processing asset file %s: %v", filename, err)
 		}
-		p.logger.Success("Completed processing file %d/%d: %s", 
-			processedFiles, 
+		p.logger.Success("Completed processing file %d/%d: %s",
+			processedFiles,
 			totalFiles-p.config.SkipFiles,
 			p.logger.HighlightFile(filename))
 	}
@@ -83,7 +83,7 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 
 func (p *DataProcessor) processAssetFile(filename string) error {
 	startTime := time.Now()
-	
+
 	// Find the most recent file for this asset type
 	filePath, err := p.findMostRecentFile(filename)
 	if err != nil {
@@ -104,8 +104,15 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		return err
 	}
 	readDuration := time.Since(readStart)
-	p.logger.Info("Read %d records from %s in %s", 
-		len(records), 
+
+	// Skip processing if no records were found
+	if len(records) == 0 {
+		p.logger.Warning("Skipping processing of empty file: %s", p.logger.HighlightFile(filePath))
+		return nil
+	}
+
+	p.logger.Info("Read %d records from %s in %s",
+		len(records),
 		p.logger.HighlightFile(filePath),
 		p.logger.HighlightValue(readDuration))
 
@@ -146,16 +153,16 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 		}
 
 		chunks = append(chunks, RecordChunk{
-			Records:       records[i:end],
-			Headers:       headers,
+			Records:        records[i:end],
+			Headers:        headers,
 			ColumnMetadata: columnMetadata,
-			SourceFile:    filePath,
-			StartIndex:    i,
+			SourceFile:     filePath,
+			StartIndex:     i,
 		})
 	}
 	chunkDuration := time.Since(metaStart)
-	p.logger.Info("Prepared %d chunks for parallel processing in %s", 
-		len(chunks), 
+	p.logger.Info("Prepared %d chunks for parallel processing in %s",
+		len(chunks),
 		p.logger.HighlightValue(chunkDuration))
 
 	// Create channels for work distribution
@@ -217,7 +224,7 @@ func (p *DataProcessor) processAssetFile(filename string) error {
 
 	// Clear the progress bar and show completion
 	p.logger.ClearProgress()
-	p.logger.Success("Completed processing %s in %s (Read: %s, Setup: %s, Process: %s)", 
+	p.logger.Success("Completed processing %s in %s (Read: %s, Setup: %s, Process: %s)",
 		p.logger.HighlightFile(filePath),
 		p.logger.HighlightValue(totalDuration),
 		p.logger.HighlightValue(readDuration),
@@ -318,6 +325,17 @@ func (p *DataProcessor) readCSVFile(filePath string) ([][]string, error) {
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, err
+	}
+
+	// Check if file is empty or has no headers
+	if len(records) == 0 {
+		p.logger.Warning("CSV file is empty: %s", filePath)
+		return [][]string{}, nil
+	}
+
+	if len(records[0]) == 0 {
+		p.logger.Warning("CSV file has no headers: %s", filePath)
+		return [][]string{}, nil
 	}
 
 	return records, nil
@@ -426,9 +444,9 @@ func (p *DataProcessor) convertValue(value string, dataType string) (interface{}
 // isNullValue checks if a value should be treated as null
 func (p *DataProcessor) isNullValue(value string) bool {
 	value = strings.TrimSpace(value)
-	return value == "" || 
-		strings.EqualFold(value, "N.A.") || 
-		strings.EqualFold(value, "n.a.") || 
+	return value == "" ||
+		strings.EqualFold(value, "N.A.") ||
+		strings.EqualFold(value, "n.a.") ||
 		strings.EqualFold(value, "null") ||
 		strings.EqualFold(value, "nil") ||
 		strings.EqualFold(value, "none") ||
@@ -446,7 +464,7 @@ func (p *DataProcessor) createTriePath(id string) string {
 
 func (p *DataProcessor) updatePropertyHistory(id, propertyName string, value interface{}, sourceFile, effectiveDate string) error {
 	historyPath := filepath.Join(p.createTriePath(id), "history.json")
-	
+
 	var history HistoryData
 	if data, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(data, &history); err != nil {
@@ -484,4 +502,4 @@ func (p *DataProcessor) getEffectiveDate(filePath string) string {
 		return parts[len(parts)-2]
 	}
 	return ""
-} 
+}
