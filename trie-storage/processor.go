@@ -415,14 +415,47 @@ func (p *DataProcessor) convertValue(value string, dataType string) (interface{}
 		return nil, nil
 	}
 
+	// Try to infer the actual type if the metadata type doesn't match
 	switch dataType {
 	case "integer":
-		return strconv.Atoi(value)
+		// First try to parse as integer
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal, nil
+		}
+		// If it contains non-numeric characters, keep it as text
+		if strings.ContainsAny(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_") {
+			p.logger.Debug("Converting integer field to text due to non-numeric content: %s", value)
+			return value, nil
+		}
+		// If it's a float, convert to integer
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return int(floatVal), nil
+		}
+		return nil, fmt.Errorf("failed to convert value to integer: %s", value)
+
+	case "float":
+		// Try to parse as float
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal, nil
+		}
+		// If it contains non-numeric characters, keep it as text
+		if strings.ContainsAny(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_") {
+			p.logger.Debug("Converting float field to text due to non-numeric content: %s", value)
+			return value, nil
+		}
+		return nil, fmt.Errorf("failed to convert value to float: %s", value)
+
 	case "text":
 		return value, nil
-	case "float":
-		return strconv.ParseFloat(value, 64)
+
 	default:
+		// For unknown types, try to infer the type
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal, nil
+		}
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal, nil
+		}
 		return value, nil
 	}
 }
