@@ -100,8 +100,12 @@ class S3Enumerator:
             logger.error(f"Error downloading file {s3_key}: {str(e)}")
             return False
 
-    def get_latest_csv_gz(self, prefix: str) -> Optional[Dict]:
-        """Get the most recent CSV.GZ file in the given prefix."""
+    def file_exists_locally(self, local_path: str) -> bool:
+        """Check if a file already exists in the local filesystem."""
+        return os.path.exists(local_path)
+
+    def get_recent_csv_gz_files(self, prefix: str) -> List[Optional[Dict]]:
+        """Get the two most recent CSV.GZ files in the given prefix."""
         try:
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
@@ -110,50 +114,67 @@ class S3Enumerator:
             )
 
             if 'Contents' not in response:
-                return None
+                return [None, None]
 
-            # Filter for CSV.GZ files and find the most recent one
+            # Filter for CSV.GZ files
             csv_files = [
                 obj for obj in response['Contents']
                 if obj['Key'].endswith('.csv.gz')
             ]
 
             if not csv_files:
-                return None
+                return [None, None]
 
             # Sort by last modified date, most recent first
-            latest_file = max(csv_files, key=lambda x: x['LastModified'])
+            sorted_files = sorted(csv_files, key=lambda x: x['LastModified'], reverse=True)
+            recent_files = sorted_files[:2]  # Get the two most recent files
             
-            file_info = {
-                'path': f"s3://{self.bucket_name}/{latest_file['Key']}",
-                'size': latest_file['Size'],
-                'last_modified': latest_file['LastModified'].isoformat(),
-                's3_key': latest_file['Key']
-            }
+            result = []
+            for file in recent_files:
+                file_info = {
+                    'path': f"s3://{self.bucket_name}/{file['Key']}",
+                    'size': file['Size'],
+                    'last_modified': file['LastModified'].isoformat(),
+                    's3_key': file['Key']
+                }
 
-            # Download the file if requested
-            if self.download and self.download_dir:
-                # Remove root path from the key to maintain relative structure
-                relative_key = latest_file['Key']
-                if self.root_path:
-                    relative_key = relative_key[len(self.root_path):].lstrip('/')
-                
-                # Construct local path
-                local_path = os.path.join(self.download_dir, relative_key)
-                file_info['local_path'] = local_path
-                self.download_file(latest_file['Key'], local_path)
+                # Download the file if requested
+                if self.download and self.download_dir:
+                    # Remove root path from the key to maintain relative structure
+                    relative_key = file['Key']
+                    if self.root_path:
+                        relative_key = relative_key[len(self.root_path):].lstrip('/')
+                    
+                    # Construct local path
+                    local_path = os.path.join(self.download_dir, relative_key)
+                    file_info['local_path'] = local_path
+                    
+                    # Only download if file doesn't exist locally
+                    if not self.file_exists_locally(local_path):
+                        if self.download_file(file['Key'], local_path):
+                            logger.info(f"Downloaded new file: {local_path}")
+                        else:
+                            logger.warning(f"Failed to download file: {local_path}")
+                    else:
+                        logger.info(f"File already exists locally: {local_path}")
 
-            return file_info
+                result.append(file_info)
+
+            # Pad with None if we have fewer than 2 files
+            while len(result) < 2:
+                result.append(None)
+
+            return result
 
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == '403':
                 self._log_403_error(e, f"listing objects in {prefix}")
             else:
                 logger.error(f"Error processing prefix {prefix}: {str(e)}")
-            return None
+            return [None, None]
         except Exception as e:
             logger.error(f"Error processing prefix {prefix}: {str(e)}")
-            return None
+            return [None, None]
 
     def enumerate_directories(self, prefix: str = "") -> None:
         """Recursively enumerate directories and process CSV.GZ files."""
@@ -177,11 +198,12 @@ class S3Enumerator:
 
                 # Process files in current directory
                 if 'Contents' in page:
-                    latest_file = self.get_latest_csv_gz(full_prefix)
-                    if latest_file:
-                        self.latest_files.append(latest_file)
-                        self.total_size += latest_file['size']
-                        logger.info(f"Found latest file: {latest_file['path']} (Size: {latest_file['size']} bytes)")
+                    recent_files = self.get_recent_csv_gz_files(full_prefix)
+                    for file_info in recent_files:
+                        if file_info:
+                            self.latest_files.append(file_info)
+                            self.total_size += file_info['size']
+                            logger.info(f"Found file: {file_info['path']} (Size: {file_info['size']} bytes)")
 
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == '403':
