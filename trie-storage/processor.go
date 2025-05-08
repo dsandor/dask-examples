@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"runtime"
 	"time"
 )
 
@@ -25,10 +25,11 @@ type RecordChunk struct {
 }
 
 type DataProcessor struct {
-	config     *Config
-	logger     *Logger
-	tui        *TUI
-	mu         sync.Mutex
+	config   Config
+	metadata []Metadata
+	logger   *Logger
+	wg       sync.WaitGroup
+	mu       sync.Mutex
 }
 
 // HistoryEntry represents a single history entry with file and value
@@ -40,31 +41,25 @@ type HistoryEntry struct {
 // HistoryData represents the history data structure
 type HistoryData map[string]map[string]HistoryEntry
 
-func NewDataProcessor(config *Config) *DataProcessor {
+func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) *DataProcessor {
 	return &DataProcessor{
-		config: config,
-		logger: NewLogger(),
-		tui:    NewTUI(runtime.NumCPU()),
+		config:   config,
+		metadata: metadata,
+		logger:   logger,
 	}
 }
 
-func (p *DataProcessor) ProcessAssetFiles(files []string) error {
-	totalFiles := len(files)
+func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
+	totalFiles := len(assetFiles)
 	processedFiles := 0
 	skippedFiles := 0
 
-	for _, filename := range files {
-		// Find the most recent data file in the directory
-		fullPath, err := p.findMostRecentFile(filename)
-		if err != nil {
-			return fmt.Errorf("error finding most recent file for %s: %v", filename, err)
-		}
-
+	for _, filename := range assetFiles {
 		if skippedFiles < p.config.SkipFiles {
 			p.logger.Info("Skipping file %d/%d: %s", 
 				skippedFiles+1, 
 				p.config.SkipFiles,
-				p.logger.HighlightFile(fullPath))
+				p.logger.HighlightFile(filename))
 			skippedFiles++
 			continue
 		}
@@ -73,165 +68,201 @@ func (p *DataProcessor) ProcessAssetFiles(files []string) error {
 		p.logger.Info("Processing file %d/%d: %s", 
 			processedFiles, 
 			totalFiles-p.config.SkipFiles,
-			p.logger.HighlightFile(fullPath))
+			p.logger.HighlightFile(filename))
 
-		if err := p.processAssetFile(fullPath); err != nil {
+		if err := p.processAssetFile(filename); err != nil {
 			return fmt.Errorf("error processing asset file %s: %v", filename, err)
 		}
 		p.logger.Success("Completed processing file %d/%d: %s", 
 			processedFiles, 
 			totalFiles-p.config.SkipFiles,
-			p.logger.HighlightFile(fullPath))
+			p.logger.HighlightFile(filename))
 	}
 	return nil
 }
 
-func (p *DataProcessor) processAssetFile(filePath string) error {
+func (p *DataProcessor) processAssetFile(filename string) error {
 	startTime := time.Now()
-	p.logger.Info("Processing %s", p.logger.HighlightFile(filePath))
+	
+	// Find the most recent file for this asset type
+	filePath, err := p.findMostRecentFile(filename)
+	if err != nil {
+		return err
+	}
+	p.logger.Info("Found most recent file: %s", p.logger.HighlightFile(filePath))
 
-	// Start TUI
-	p.tui.Start()
-	defer p.tui.Stop()
+	// Get expected row count from metadata
+	expectedRows := p.getExpectedRowCount(filename)
+	if expectedRows == 0 {
+		p.logger.Warning("No row count found in metadata for %s", filename)
+	}
 
-	// Read and parse the file
+	// Read and process the CSV file
 	readStart := time.Now()
 	records, err := p.readCSVFile(filePath)
 	if err != nil {
-		return fmt.Errorf("error reading file: %v", err)
+		return err
 	}
 	readDuration := time.Since(readStart)
-	p.logger.Info("Read %d records from %s in %.2fs", len(records), p.logger.HighlightFile(filePath), readDuration.Seconds())
+	p.logger.Info("Read %d records from %s in %s", 
+		len(records), 
+		p.logger.HighlightFile(filePath),
+		p.logger.HighlightValue(readDuration))
 
-	// Process metadata
+	// Get column headers and metadata
 	metaStart := time.Now()
-	metadata, err := p.processMetadata(records)
-	if err != nil {
-		return fmt.Errorf("error processing metadata: %v", err)
+	headers := records[0]
+	fileMetadata := p.getFileMetadata(filename)
+	if fileMetadata == nil {
+		return fmt.Errorf("no metadata found for file %s", filename)
+	}
+
+	// Create column index to metadata mapping
+	columnMetadata := make(map[string]Column)
+	for _, col := range fileMetadata.Columns {
+		columnMetadata[col.Name] = col
 	}
 	metaDuration := time.Since(metaStart)
-	p.logger.Info("Processed metadata in %.2fs", metaDuration.Seconds())
+	p.logger.Info("Processed metadata in %s", p.logger.HighlightValue(metaDuration))
 
-	// Prepare chunks for parallel processing
-	chunkStart := time.Now()
+	// Calculate number of workers (use number of CPU cores)
 	numWorkers := runtime.NumCPU()
 	if numWorkers < 1 {
 		numWorkers = 1
 	}
-	chunkSize := (len(records) + numWorkers - 1) / numWorkers
-	chunks := make([]RecordChunk, numWorkers)
-	for i := 0; i < numWorkers; i++ {
-		start := i * chunkSize
-		end := start + chunkSize
+
+	// Calculate chunk size
+	chunkSize := (len(records) - 1) / numWorkers
+	if chunkSize < 1 {
+		chunkSize = 1
+	}
+
+	// Pre-allocate chunks to avoid allocations during processing
+	chunks := make([]RecordChunk, 0, numWorkers)
+	for i := 1; i < len(records); i += chunkSize {
+		end := i + chunkSize
 		if end > len(records) {
 			end = len(records)
 		}
-		chunks[i] = RecordChunk{
-			Records:       records[start:end],
-			Headers:       records[0],
-			ColumnMetadata: metadata,
+
+		chunks = append(chunks, RecordChunk{
+			Records:       records[i:end],
+			Headers:       headers,
+			ColumnMetadata: columnMetadata,
 			SourceFile:    filePath,
-			StartIndex:    start,
-		}
+			StartIndex:    i,
+		})
 	}
-	chunkDuration := time.Since(chunkStart)
-	p.logger.Info("Prepared %d chunks for parallel processing in %.2fs", numWorkers, chunkDuration.Seconds())
+	chunkDuration := time.Since(metaStart)
+	p.logger.Info("Prepared %d chunks for parallel processing in %s", 
+		len(chunks), 
+		p.logger.HighlightValue(chunkDuration))
 
 	// Create channels for work distribution
 	chunkChan := make(chan RecordChunk, numWorkers)
-	errChan := make(chan error, numWorkers)
+	errorChan := make(chan error, numWorkers)
+	progressChan := make(chan int, numWorkers*2) // Buffer for progress updates
 
 	// Start worker goroutines
+	p.wg.Add(numWorkers)
+	processStart := time.Now()
+	p.logger.Info("Starting parallel processing with %s worker threads", p.logger.HighlightValue(numWorkers))
+
+	// Start workers
 	workerStart := time.Now()
-	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for chunk := range chunkChan {
-				processed := 0
-				total := len(chunk.Records)
-				for _, record := range chunk.Records {
-					if err := p.processRecord(record, chunk.Headers, chunk.ColumnMetadata, chunk.SourceFile); err != nil {
-						errChan <- fmt.Errorf("error processing record: %v", err)
-						return
-					}
-					processed++
-					// Report progress every 1%
-					if processed%(total/100+1) == 0 {
-						progress := float64(processed) * 100 / float64(total)
-						p.tui.UpdateProgress(workerID, progress, fmt.Sprintf("Processing %d/%d records", processed, total))
-					}
-				}
-			}
-		}(i)
+		go p.worker(chunkChan, errorChan, progressChan)
 	}
 	workerDuration := time.Since(workerStart)
-	p.logger.Info("Started %d worker goroutines in %.3fs", numWorkers, workerDuration.Seconds())
+	p.logger.Info("Started %d worker goroutines in %s", p.logger.HighlightValue(numWorkers), p.logger.HighlightValue(workerDuration))
+
+	// Start progress monitor
+	monitorStart := time.Now()
+	go p.monitorProgress(expectedRows, filePath, progressChan)
+	monitorDuration := time.Since(monitorStart)
+	p.logger.Info("Started progress monitor in %s", p.logger.HighlightValue(monitorDuration))
 
 	// Send chunks to workers
-	sendStart := time.Now()
-	p.logger.Info("Sending %d chunks to workers...", numWorkers)
+	chunkSendStart := time.Now()
+	p.logger.Info("Sending %d chunks to workers...", p.logger.HighlightValue(len(chunks)))
 	for _, chunk := range chunks {
 		chunkChan <- chunk
 	}
 	close(chunkChan)
-	sendDuration := time.Since(sendStart)
-	p.logger.Info("Sent all chunks to workers in %.3fs", sendDuration.Seconds())
+	chunkSendDuration := time.Since(chunkSendStart)
+	p.logger.Info("Sent all chunks to workers in %s", p.logger.HighlightValue(chunkSendDuration))
 
 	// Wait for all workers to complete
-	p.logger.Info("Waiting for workers to complete processing...")
 	waitStart := time.Now()
-	wg.Wait()
+	p.logger.Info("Waiting for workers to complete processing...")
+	p.wg.Wait()
 	waitDuration := time.Since(waitStart)
-	p.logger.Info("All workers completed in %.2fs", waitDuration.Seconds())
+	p.logger.Info("All workers completed in %s", p.logger.HighlightValue(waitDuration))
 
-	// Check for errors
-	checkStart := time.Now()
-	close(errChan)
-	if err := <-errChan; err != nil {
-		return err
+	close(errorChan)
+	close(progressChan)
+
+	// Check for any errors
+	errorCheckStart := time.Now()
+	for err := range errorChan {
+		if err != nil {
+			return err
+		}
 	}
-	checkDuration := time.Since(checkStart)
-	p.logger.Info("Error check completed in %.3fs", checkDuration.Seconds())
+	errorCheckDuration := time.Since(errorCheckStart)
+	p.logger.Info("Error check completed in %s", p.logger.HighlightValue(errorCheckDuration))
 
-	// Log completion
+	processDuration := time.Since(processStart)
 	totalDuration := time.Since(startTime)
-	p.logger.Success("Completed processing %s in %.1fs (Read: %.2fs, Setup: %.2fs, Process: %.2fs)",
+
+	// Clear the progress bar and show completion
+	p.logger.ClearProgress()
+	p.logger.Success("Completed processing %s in %s (Read: %s, Setup: %s, Process: %s)", 
 		p.logger.HighlightFile(filePath),
-		totalDuration.Seconds(),
-		readDuration.Seconds(),
-		metaDuration.Seconds(),
-		waitDuration.Seconds())
+		p.logger.HighlightValue(totalDuration),
+		p.logger.HighlightValue(readDuration),
+		p.logger.HighlightValue(chunkDuration),
+		p.logger.HighlightValue(processDuration))
 
 	return nil
 }
 
-func (p *DataProcessor) processMetadata(records [][]string) (map[string]Column, error) {
-	if len(records) < 2 {
-		return nil, fmt.Errorf("file must contain at least a header row and one data row")
+func (p *DataProcessor) monitorProgress(expectedRows int, filePath string, progressChan <-chan int) {
+	processedRows := 0
+	lastPercentage := 0
+
+	for count := range progressChan {
+		processedRows += count
+		if expectedRows > 0 {
+			percentage := int(float64(processedRows) / float64(expectedRows) * 100)
+			if percentage > lastPercentage {
+				lastPercentage = percentage
+				p.mu.Lock()
+				p.logger.ProgressBar(filePath, float64(percentage))
+				p.mu.Unlock()
+			}
+		}
 	}
+}
 
-	metadata := make(map[string]Column)
+func (p *DataProcessor) worker(chunkChan <-chan RecordChunk, errorChan chan<- error, progressChan chan<- int) {
+	defer p.wg.Done()
 
-	// Use the metadata from the config directly since there's only one metadata file
-	if len(p.config.Metadata) == 0 {
-		return nil, fmt.Errorf("no metadata found in configuration")
+	for chunk := range chunkChan {
+		processedCount := 0
+		for _, record := range chunk.Records {
+			if err := p.processRecord(record, chunk.Headers, chunk.ColumnMetadata, chunk.SourceFile); err != nil {
+				errorChan <- err
+				return
+			}
+			processedCount++
+		}
+		progressChan <- processedCount
 	}
-
-	// Use the first (and only) metadata entry
-	fileMetadata := &p.config.Metadata[0]
-
-	// Create column metadata mapping
-	for _, col := range fileMetadata.Columns {
-		metadata[col.Name] = col
-	}
-
-	return metadata, nil
 }
 
 func (p *DataProcessor) getFileMetadata(filename string) *Metadata {
-	for _, meta := range p.config.Metadata {
+	for _, meta := range p.metadata {
 		if meta.Filename == filename {
 			return &meta
 		}
@@ -240,7 +271,7 @@ func (p *DataProcessor) getFileMetadata(filename string) *Metadata {
 }
 
 func (p *DataProcessor) getExpectedRowCount(filename string) int {
-	for _, meta := range p.config.Metadata {
+	for _, meta := range p.metadata {
 		if meta.Filename == filename {
 			return meta.RowCount
 		}
