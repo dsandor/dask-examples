@@ -25,6 +25,14 @@ type RecordChunk struct {
 	StartIndex     int
 }
 
+// TypeMismatch tracks columns that need their data type updated in metadata
+type TypeMismatch struct {
+	Filename   string
+	ColumnName string
+	ActualType string
+	mu         sync.Mutex
+}
+
 type DataProcessor struct {
 	config         Config
 	metadata       []Metadata
@@ -34,6 +42,7 @@ type DataProcessor struct {
 	errorChan      chan error
 	wg             sync.WaitGroup
 	mu             sync.Mutex
+	typeMismatches map[string]map[string]string // filename -> column -> actual type
 }
 
 // HistoryEntry represents a single history entry with file and value
@@ -81,6 +90,7 @@ func NewDataProcessor(config Config, metadata []Metadata, logger *Logger) (*Data
 		processedFiles: processedFiles,
 		fileChan:       make(chan string, runtime.NumCPU()),
 		errorChan:      make(chan error, runtime.NumCPU()),
+		typeMismatches: make(map[string]map[string]string),
 	}, nil
 }
 
@@ -140,6 +150,12 @@ func (p *DataProcessor) ProcessAssetFiles(assetFiles []string) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Update metadata with any type corrections
+	if err := p.updateMetadata(); err != nil {
+		p.logger.Error("Failed to update metadata: %v", err)
+		return err
 	}
 
 	return nil
@@ -378,7 +394,7 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 		}
 
 		// Convert value based on data type
-		convertedValue, err := p.convertValue(value, metadata.DataType)
+		convertedValue, err := p.convertValue(value, metadata.DataType, sourceFile, columnName)
 		if err != nil {
 			p.logger.Warning("Failed to convert value for column %s: %v", columnName, err)
 			continue
@@ -409,7 +425,61 @@ func (p *DataProcessor) processRecord(record []string, headers []string, columnM
 	return os.WriteFile(existingDataPath, data, 0644)
 }
 
-func (p *DataProcessor) convertValue(value string, dataType string) (interface{}, error) {
+func (p *DataProcessor) trackTypeMismatch(filename, columnName, actualType string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if _, exists := p.typeMismatches[filename]; !exists {
+		p.typeMismatches[filename] = make(map[string]string)
+	}
+	p.typeMismatches[filename][columnName] = actualType
+}
+
+func (p *DataProcessor) updateMetadata() error {
+	if len(p.typeMismatches) == 0 {
+		return nil
+	}
+
+	p.logger.Info("Updating metadata with corrected data types...")
+
+	// Create a map of filename to metadata index for quick lookup
+	metadataMap := make(map[string]int)
+	for i, meta := range p.metadata {
+		metadataMap[meta.Filename] = i
+	}
+
+	// Update metadata with corrected types
+	for filename, columns := range p.typeMismatches {
+		if idx, exists := metadataMap[filename]; exists {
+			for colName, actualType := range columns {
+				// Find and update the column in metadata
+				for i, col := range p.metadata[idx].Columns {
+					if col.Name == colName {
+						p.logger.Info("Updating metadata for %s: column %s type from %s to %s",
+							filename, colName, col.DataType, actualType)
+						p.metadata[idx].Columns[i].DataType = actualType
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Save updated metadata
+	data, err := json.MarshalIndent(p.metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling updated metadata: %v", err)
+	}
+
+	if err := os.WriteFile(p.config.MetadataFile, data, 0644); err != nil {
+		return fmt.Errorf("error saving updated metadata: %v", err)
+	}
+
+	p.logger.Success("Successfully updated metadata with corrected data types")
+	return nil
+}
+
+func (p *DataProcessor) convertValue(value string, dataType string, filename string, columnName string) (interface{}, error) {
 	// Check for null-like values
 	if p.isNullValue(value) {
 		return nil, nil
@@ -425,6 +495,7 @@ func (p *DataProcessor) convertValue(value string, dataType string) (interface{}
 		// If it contains non-numeric characters, keep it as text
 		if strings.ContainsAny(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_") {
 			p.logger.Debug("Converting integer field to text due to non-numeric content: %s", value)
+			p.trackTypeMismatch(filename, columnName, "text")
 			return value, nil
 		}
 		// If it's a float, convert to integer
@@ -441,6 +512,7 @@ func (p *DataProcessor) convertValue(value string, dataType string) (interface{}
 		// If it contains non-numeric characters, keep it as text
 		if strings.ContainsAny(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_") {
 			p.logger.Debug("Converting float field to text due to non-numeric content: %s", value)
+			p.trackTypeMismatch(filename, columnName, "text")
 			return value, nil
 		}
 		return nil, fmt.Errorf("failed to convert value to float: %s", value)
