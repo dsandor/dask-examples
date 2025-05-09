@@ -12,6 +12,8 @@ import (
 	"sync"
 
 	"csv-compare/pkg/fileutils"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // DeltaRecord represents a change between two CSV records
@@ -427,6 +429,12 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 		return fmt.Errorf("error writing changes to log file: %w", err)
 	}
 
+	// Generate Excel file with highlights
+	excelPath := strings.TrimSuffix(deltaCSVPath, filepath.Ext(deltaCSVPath)) + ".xlsx"
+	if err := p.generateExcelWithHighlights(deltaCSVPath, changesMap, excelPath); err != nil {
+		return fmt.Errorf("error generating Excel file: %w", err)
+	}
+
 	// Print summary
 	fmt.Println("\nSummary:")
 	fmt.Printf("Current file row count: %d\n", p.CurrentRowCount)
@@ -435,6 +443,7 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	for col := range p.ChangedColumns {
 		fmt.Printf("  - %s\n", col)
 	}
+	fmt.Printf("\nExcel file generated: %s\n", excelPath)
 
 	return nil
 }
@@ -555,4 +564,102 @@ func loadCSVToSlice(filePath string, primaryKey string) ([][]string, []string, e
 	}
 
 	return data, headers, nil
+}
+
+// generateExcelWithHighlights creates an Excel file with highlighted changes and tooltips
+func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesMap map[string]map[string]ColumnChange, excelPath string) error {
+	// Create a new Excel file
+	f := excelize.NewFile()
+	defer f.Close()
+
+	// Create a new sheet
+	sheetName := "Changes"
+	f.SetSheetName("Sheet1", sheetName)
+
+	// Read the delta CSV file
+	file, err := os.Open(deltaCSVPath)
+	if err != nil {
+		return fmt.Errorf("error opening delta file: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	headers, err := reader.Read()
+	if err != nil {
+		return fmt.Errorf("error reading headers: %w", err)
+	}
+
+	// Write headers
+	for i, header := range headers {
+		cell := fmt.Sprintf("%c1", 'A'+i)
+		f.SetCellValue(sheetName, cell, header)
+	}
+
+	// Create style for highlighted cells
+	style, err := f.NewStyle(&excelize.Style{
+		Fill: excelize.Fill{
+			Type:    "pattern",
+			Color:   []string{"#FFEB9C"},
+			Pattern: 1,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error creating style: %w", err)
+	}
+
+	// Process each row
+	rowNum := 2 // Start from row 2 (after headers)
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("error reading record: %w", err)
+		}
+
+		// Get the primary key value
+		keyIndex := p.headerMap[p.PrimaryKey]
+		if keyIndex >= len(record) {
+			continue
+		}
+		primaryKey := record[keyIndex]
+
+		// Write the row
+		for i, value := range record {
+			cell := fmt.Sprintf("%c%d", 'A'+i, rowNum)
+			f.SetCellValue(sheetName, cell, value)
+
+			// If this row has changes, highlight the changed cells
+			if changes, exists := changesMap[primaryKey]; exists {
+				colName := headers[i]
+				if change, hasChange := changes[colName]; hasChange {
+					// Apply highlight style
+					f.SetCellStyle(sheetName, cell, cell, style)
+
+					// Add comment with previous value
+					comment := fmt.Sprintf("Previous value: %v", change.PreviousVal)
+					f.AddComment(sheetName, excelize.Comment{
+						Cell:   cell,
+						Author: "CSV Compare",
+						Text:   comment,
+					})
+				}
+			}
+		}
+		rowNum++
+	}
+
+	// Auto-fit columns
+	for i := range headers {
+		col := string('A' + i)
+		f.SetColWidth(sheetName, col, col, 15)
+	}
+
+	// Save the file
+	if err := f.SaveAs(excelPath); err != nil {
+		return fmt.Errorf("error saving Excel file: %w", err)
+	}
+
+	return nil
 }
