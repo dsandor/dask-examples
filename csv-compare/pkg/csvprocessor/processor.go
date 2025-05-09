@@ -585,6 +585,8 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	// Make the reader more lenient with field counts
+	reader.FieldsPerRecord = -1 // Allow variable number of fields
 	headers, err := reader.Read()
 	if err != nil {
 		return fmt.Errorf("error reading headers: %w", err)
@@ -629,18 +631,21 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	}
 
 	// Process each row
-	rowNum := 2 // Start from row 2 (after headers)
+	rowNum := 2  // Start from row 2 (after headers)
+	lineNum := 2 // Track line number for error reporting
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error reading record: %w", err)
+			return fmt.Errorf("error reading record at line %d: %w", lineNum, err)
 		}
 
 		// Get the primary key value
 		if pkIndex >= len(record) {
+			fmt.Printf("Warning: Skipping row %d: primary key column not found\n", lineNum)
+			lineNum++
 			continue
 		}
 		primaryKey := record[pkIndex]
@@ -648,7 +653,12 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 		// Write the row (only included columns)
 		for i, colIndex := range columnIndices {
 			cell := fmt.Sprintf("%c%d", 'A'+i, rowNum)
-			f.SetCellValue(sheetName, cell, record[colIndex])
+			// Handle case where record has fewer fields than expected
+			if colIndex < len(record) {
+				f.SetCellValue(sheetName, cell, record[colIndex])
+			} else {
+				f.SetCellValue(sheetName, cell, "") // Empty cell for missing fields
+			}
 
 			// If this row has changes, highlight the changed cells
 			if changes, exists := changesMap[primaryKey]; exists {
@@ -668,6 +678,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 			}
 		}
 		rowNum++
+		lineNum++
 	}
 
 	// Auto-fit columns
