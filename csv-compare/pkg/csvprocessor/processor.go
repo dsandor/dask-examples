@@ -29,12 +29,13 @@ type ColumnChange struct {
 
 // CSVProcessor handles CSV comparison operations
 type CSVProcessor struct {
-	PreviousFile     string
-	CurrentFile      string
-	Headers          []string
-	headerMap        map[string]int
-	IgnoredColumns   []string
+	PreviousFile      string
+	CurrentFile       string
+	Headers           []string
+	headerMap         map[string]int
+	IgnoredColumns    []string
 	ignoredColumnsMap map[string]bool
+	prevDataMutex     sync.Mutex // Add mutex for protecting prevData access
 }
 
 // NewCSVProcessor creates a new CSVProcessor instance
@@ -44,19 +45,19 @@ func NewCSVProcessor(previousFile, currentFile string, ignoredColumns []string) 
 	for _, col := range ignoredColumns {
 		ignoredColumnsMap[col] = true
 	}
-	
+
 	if len(ignoredColumns) > 0 {
 		fileutils.LogInfo("The following columns will be ignored when determining differences:")
 		for _, col := range ignoredColumns {
 			fmt.Printf("  - %s\n", fileutils.Highlight(col))
 		}
 	}
-	
+
 	return &CSVProcessor{
-		PreviousFile:     previousFile,
-		CurrentFile:      currentFile,
-		headerMap:        make(map[string]int),
-		IgnoredColumns:   ignoredColumns,
+		PreviousFile:      previousFile,
+		CurrentFile:       currentFile,
+		headerMap:         make(map[string]int),
+		IgnoredColumns:    ignoredColumns,
 		ignoredColumnsMap: ignoredColumnsMap,
 	}
 }
@@ -64,7 +65,7 @@ func NewCSVProcessor(previousFile, currentFile string, ignoredColumns []string) 
 // CompareCSVs compares two CSV files and writes the delta to output files
 func (p *CSVProcessor) CompareCSVs(deltaCSVPath, changeLogPath string) error {
 	fileutils.LogInfo("Starting comparison between files")
-	
+
 	// Open previous file with support for gzip
 	prevReader, prevCloser, err := openCSVReader(p.PreviousFile)
 	if err != nil {
@@ -237,7 +238,7 @@ func (p *CSVProcessor) recordsMatch(r1, r2 []string) bool {
 				continue
 			}
 		}
-		
+
 		if v != r2[i] {
 			return false
 		}
@@ -249,7 +250,7 @@ func (p *CSVProcessor) recordsMatch(r1, r2 []string) bool {
 // CompareCSVsParallel compares two CSV files using parallel processing for better performance
 func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, chunkSize int) error {
 	fileutils.LogInfo("Starting parallel comparison between files with chunk size: %s", fileutils.Highlight(fmt.Sprintf("%d", chunkSize)))
-	
+
 	// Load both files into memory
 	prevData, err := loadCSVToMap(p.PreviousFile)
 	if err != nil {
@@ -293,50 +294,53 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	// Process in parallel
 	numWorkers := 4 // Adjust based on available CPU cores
 	var wg sync.WaitGroup
-	
+
 	// Channel for results
 	deltaRecordsCh := make(chan []string, numWorkers)
 	changesCh := make(chan DeltaRecord, numWorkers)
-	
+
 	// Channel for distributing work
 	workCh := make(chan [][]string, numWorkers)
-	
+
 	// Start workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			keyIndex := 0 // Assuming first column is the key
-			
+
 			for chunk := range workCh {
 				for rowIndex, currRecord := range chunk {
 					if len(currRecord) <= keyIndex {
 						continue
 					}
-					
+
 					key := currRecord[keyIndex]
+
+					// Protect map access with mutex
+					p.prevDataMutex.Lock()
 					prevRecord, exists := prevData[key]
-					
+
 					// If record doesn't exist in previous file or has changes, write to delta
 					if !exists || !p.recordsMatch(prevRecord, currRecord) {
 						deltaRecordsCh <- currRecord
-						
+
 						// If record exists in previous file, log changes
 						if exists {
 							deltaRecord := DeltaRecord{
 								RowIndex: rowIndex,
 								Changes:  make(map[string]ColumnChange),
 							}
-							
+
 							for i, val := range currRecord {
 								if i < len(prevRecord) && val != prevRecord[i] && i < len(p.Headers) {
 									colName := p.Headers[i]
-									
+
 									// Skip ignored columns
 									if p.ignoredColumnsMap[colName] {
 										continue
 									}
-									
+
 									deltaRecord.Changes[colName] = ColumnChange{
 										Column:      colName,
 										PreviousVal: prevRecord[i],
@@ -344,20 +348,21 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 									}
 								}
 							}
-							
+
 							if len(deltaRecord.Changes) > 0 {
 								changesCh <- deltaRecord
 							}
 						}
 					}
-					
+
 					// Remove processed record from prevData to identify records that exist only in previous file
 					delete(prevData, key)
+					p.prevDataMutex.Unlock()
 				}
 			}
 		}()
 	}
-	
+
 	// Distribute work
 	go func() {
 		for i := 0; i < len(currData); i += chunkSize {
@@ -369,39 +374,39 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 		}
 		close(workCh)
 	}()
-	
+
 	// Collect results
 	go func() {
 		wg.Wait()
 		close(deltaRecordsCh)
 		close(changesCh)
 	}()
-	
+
 	// Write delta records
 	var changes []DeltaRecord
-	
+
 	// Write delta records as they come in
 	go func() {
 		for record := range deltaRecordsCh {
 			deltaWriter.Write(record)
 		}
 	}()
-	
+
 	// Collect changes
 	for change := range changesCh {
 		changes = append(changes, change)
 	}
-	
+
 	// Flush delta writer
 	deltaWriter.Flush()
-	
+
 	// Write changes to JSON file
 	encoder := json.NewEncoder(changesFile)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(changes); err != nil {
 		return fmt.Errorf("error writing changes to log file: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -415,7 +420,7 @@ func openCSVReader(filePath string) (*csv.Reader, func(), error) {
 	// Check if file is gzipped
 	var reader io.Reader = file
 	var closer = func() { file.Close() }
-	
+
 	if strings.HasSuffix(filePath, ".gz") {
 		fileutils.LogInfo("Opening gzipped file: %s", fileutils.Highlight(filepath.Base(filePath)))
 		gzReader, err := gzip.NewReader(file)
@@ -442,7 +447,7 @@ func loadCSVToMap(filePath string) (map[string][]string, error) {
 		return nil, err
 	}
 	defer closer()
-	
+
 	// Skip header
 	_, err = reader.Read()
 	if err != nil {
@@ -476,7 +481,7 @@ func loadCSVToSlice(filePath string) ([][]string, []string, error) {
 		return nil, nil, err
 	}
 	defer closer()
-	
+
 	// Read header
 	headers, err := reader.Read()
 	if err != nil {
