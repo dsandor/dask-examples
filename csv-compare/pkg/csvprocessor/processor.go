@@ -592,12 +592,23 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 		return fmt.Errorf("error reading headers: %w", err)
 	}
 
+	// Verify primary key exists in headers
+	pkIndex := -1
+	for i, header := range headers {
+		if header == p.PrimaryKey {
+			pkIndex = i
+			break
+		}
+	}
+	if pkIndex == -1 {
+		return fmt.Errorf("primary key '%s' not found in headers", p.PrimaryKey)
+	}
+
 	// Determine which columns to include
 	columnsToInclude := make(map[int]bool)
 	columnIndices := make([]int, 0)
 
-	// Always include primary key column
-	pkIndex := p.headerMap[p.PrimaryKey]
+	// Always include primary key column first
 	columnsToInclude[pkIndex] = true
 	columnIndices = append(columnIndices, pkIndex)
 
@@ -655,9 +666,14 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 			cell := fmt.Sprintf("%c%d", 'A'+i, rowNum)
 			// Handle case where record has fewer fields than expected
 			if colIndex < len(record) {
-				f.SetCellValue(sheetName, cell, record[colIndex])
+				// Ensure the value is properly formatted as a string
+				value := record[colIndex]
+				if value == "" {
+					value = " " // Use a space instead of empty string to prevent Excel from deleting the column
+				}
+				f.SetCellValue(sheetName, cell, value)
 			} else {
-				f.SetCellValue(sheetName, cell, "") // Empty cell for missing fields
+				f.SetCellValue(sheetName, cell, " ") // Use a space instead of empty string
 			}
 
 			// If this row has changes, highlight the changed cells
