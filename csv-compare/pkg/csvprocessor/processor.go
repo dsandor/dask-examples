@@ -30,6 +30,12 @@ type ColumnChange struct {
 	CurrentVal  interface{} `json:"current_value"`
 }
 
+// CompareStats represents statistics about the comparison
+type CompareStats struct {
+	NewRecords     int `json:"newrecords"`
+	RemovedRecords int `json:"removedrecords"`
+}
+
 // CSVProcessor handles CSV comparison operations
 type CSVProcessor struct {
 	PreviousFile      string
@@ -307,6 +313,17 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	}
 	defer changesFile.Close()
 
+	// Create stats file
+	statsPath := strings.TrimSuffix(deltaCSVPath, filepath.Ext(deltaCSVPath)) + "_stats.json"
+	statsFile, err := os.Create(statsPath)
+	if err != nil {
+		return fmt.Errorf("error creating stats file: %w", err)
+	}
+	defer statsFile.Close()
+
+	// Initialize stats
+	stats := CompareStats{}
+
 	// Process in parallel
 	numWorkers := 4 // Adjust based on available CPU cores
 	var wg sync.WaitGroup
@@ -340,6 +357,11 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 					if !exists || !p.recordsMatch(prevRecord, currRecord) {
 						deltaRecordsCh <- currRecord
 						p.DeltaRowCount++
+
+						// If record doesn't exist in previous file, increment new records count
+						if !exists {
+							stats.NewRecords++
+						}
 
 						// If record exists in previous file, log changes
 						if exists {
@@ -430,6 +452,16 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 		return fmt.Errorf("error writing changes to log file: %w", err)
 	}
 
+	// Calculate removed records (records that exist in prevData but not in current)
+	stats.RemovedRecords = len(prevData)
+
+	// Write stats to JSON file
+	statsEncoder := json.NewEncoder(statsFile)
+	statsEncoder.SetIndent("", "  ")
+	if err := statsEncoder.Encode(stats); err != nil {
+		return fmt.Errorf("error writing stats to file: %w", err)
+	}
+
 	// Generate Excel file with highlights
 	excelPath := strings.TrimSuffix(deltaCSVPath, filepath.Ext(deltaCSVPath)) + ".xlsx"
 	if err := p.generateExcelWithHighlights(deltaCSVPath, changesMap, excelPath); err != nil {
@@ -440,11 +472,14 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	fmt.Println("\nSummary:")
 	fmt.Printf("Current file row count: %d\n", p.CurrentRowCount)
 	fmt.Printf("Delta file row count: %d\n", p.DeltaRowCount)
+	fmt.Printf("New records: %d\n", stats.NewRecords)
+	fmt.Printf("Removed records: %d\n", stats.RemovedRecords)
 	fmt.Println("Columns with differences:")
 	for col := range p.ChangedColumns {
 		fmt.Printf("  - %s\n", col)
 	}
 	fmt.Printf("\nExcel file generated: %s\n", excelPath)
+	fmt.Printf("Stats file generated: %s\n", statsPath)
 
 	return nil
 }
