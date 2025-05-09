@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -589,10 +590,30 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 		return fmt.Errorf("error reading headers: %w", err)
 	}
 
-	// Write headers
-	for i, header := range headers {
+	// Determine which columns to include
+	columnsToInclude := make(map[int]bool)
+	columnIndices := make([]int, 0)
+
+	// Always include primary key column
+	pkIndex := p.headerMap[p.PrimaryKey]
+	columnsToInclude[pkIndex] = true
+	columnIndices = append(columnIndices, pkIndex)
+
+	// Include columns that had changes
+	for col := range p.ChangedColumns {
+		if index, exists := p.headerMap[col]; exists {
+			columnsToInclude[index] = true
+			columnIndices = append(columnIndices, index)
+		}
+	}
+
+	// Sort column indices to maintain original order
+	sort.Ints(columnIndices)
+
+	// Write headers for included columns
+	for i, colIndex := range columnIndices {
 		cell := fmt.Sprintf("%c1", 'A'+i)
-		f.SetCellValue(sheetName, cell, header)
+		f.SetCellValue(sheetName, cell, headers[colIndex])
 	}
 
 	// Create style for highlighted cells
@@ -619,20 +640,19 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 		}
 
 		// Get the primary key value
-		keyIndex := p.headerMap[p.PrimaryKey]
-		if keyIndex >= len(record) {
+		if pkIndex >= len(record) {
 			continue
 		}
-		primaryKey := record[keyIndex]
+		primaryKey := record[pkIndex]
 
-		// Write the row
-		for i, value := range record {
+		// Write the row (only included columns)
+		for i, colIndex := range columnIndices {
 			cell := fmt.Sprintf("%c%d", 'A'+i, rowNum)
-			f.SetCellValue(sheetName, cell, value)
+			f.SetCellValue(sheetName, cell, record[colIndex])
 
 			// If this row has changes, highlight the changed cells
 			if changes, exists := changesMap[primaryKey]; exists {
-				colName := headers[i]
+				colName := headers[colIndex]
 				if change, hasChange := changes[colName]; hasChange {
 					// Apply highlight style
 					f.SetCellStyle(sheetName, cell, cell, style)
@@ -651,7 +671,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	}
 
 	// Auto-fit columns
-	for i := range headers {
+	for i := range columnIndices {
 		col := string('A' + i)
 		f.SetColWidth(sheetName, col, col, 15)
 	}

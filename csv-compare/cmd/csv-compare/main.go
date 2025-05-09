@@ -20,16 +20,8 @@ import (
 // printBanner prints a colorful banner for the application
 func printBanner() {
 	bold := color.New(color.Bold).SprintFunc()
-	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
 	green := color.New(color.FgGreen).SprintFunc()
 
-	fmt.Println("")
-	fmt.Println(cyan("  ____   ______     __   ____                                  "))
-	fmt.Println(cyan(" / ___\\ /_  __/    / /  / __ \\___  __ _  ___  __ _ _ __ ___ "))
-	fmt.Println(cyan("/ /     / /      / /  / /  / _ \\/ _` |/ _ \\/ _` | '__/ _ \\"))
-	fmt.Println(cyan("\\/___  / /      / /__/ /__/  __/ (_| |  __/ (_| | | |  __/"))
-	fmt.Println(cyan(" \\____\\/_/      /____/\\____/\\___|\\__, |\\___|\\__,_|_|  \\___|"))
-	fmt.Println(cyan("                                 |___/                     "))
 	fmt.Println("")
 	fmt.Printf("%s %s\n", bold("CSV Compare Tool"), green("v1.1.0"))
 	fmt.Println(green("Efficiently compare CSV files and generate delta reports"))
