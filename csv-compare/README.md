@@ -1,64 +1,138 @@
-# csv-compare
+# CSV Compare Tool
 
-A high-performance Go application that finds the latest and previous CSV files in a directory and compares them. Changes are written to a delta CSV file. Column differences are logged to a JSON file indicating which column was different along with the previous and current values.
+A high-performance tool for comparing CSV files and generating delta reports. The tool efficiently identifies new rows and changes between two CSV files using a specified primary key for row matching.
 
 ## Features
 
-- Automatically detects the latest and previous CSV files in a directory
-- Supports both regular CSV files and gzipped CSV files (.csv.gz)
-- Uses dates in filenames (YYYYMMDD format) to determine the latest and previous files
-- Generates a delta CSV file containing only the changed records
-- Creates a detailed JSON log of all column-level changes
-- Ability to ignore specific columns when determining differences
-- Supports both sequential and parallel processing for optimal performance
-- Includes performance profiling capabilities
-- Colorful console output for better readability
-- Optimized for speed with large CSV files
+- Fast parallel processing of large CSV files
+- Support for both plain CSV and gzipped CSV files
+- Flexible primary key-based row matching
+- Detailed change tracking with JSON output
+- Configurable column ignoring
+- CPU and memory profiling support
+- Auto-detection of latest CSV files in a directory
+
+## Installation
+
+```bash
+go install github.com/yourusername/csv-compare@latest
+```
 
 ## Usage
 
 ```bash
-# Basic usage with automatic file detection
-go run cmd/csv-compare/main.go -dir /path/to/csv/files
-
-# Specify custom output paths
-go run cmd/csv-compare/main.go -dir /path/to/csv/files -delta custom_delta.csv -log custom_changes.json
-
-# Use specific CSV files instead of auto-detection
-go run cmd/csv-compare/main.go -prev previous.csv -curr current.csv
-
-# Disable parallel processing
-go run cmd/csv-compare/main.go -parallel=false
-
-# Adjust chunk size for parallel processing
-go run cmd/csv-compare/main.go -chunk-size 5000
-
-# Ignore specific columns when determining differences
-go run cmd/csv-compare/main.go -ignore-columns="timestamp,updated_at,version"
-
-# Enable CPU profiling
-go run cmd/csv-compare/main.go -cpuprofile cpu.prof
-
-# Enable memory profiling
-go run cmd/csv-compare/main.go -memprofile mem.prof
+csv-compare [flags]
 ```
 
-## Performance Optimization
+### Required Flags
 
-The application is optimized for speed using several techniques:
+- `--primary-key`: Column name to use as primary key for matching rows (required)
 
-1. Parallel processing with configurable worker count and chunk size
-2. Efficient in-memory data structures for fast lookups
-3. Minimized I/O operations
-4. Built-in profiling for performance analysis and tuning
+### Optional Flags
 
-## Building
+- `--prev`: Specific previous CSV file to use (instead of auto-detecting)
+- `--curr`: Specific current CSV file to use (instead of auto-detecting)
+- `--dir`: Directory path containing CSV files (.csv or .csv.gz) (default: ".")
+- `--delta`: Path for the delta CSV output (default: delta_TIMESTAMP.csv)
+- `--log`: Path for the changes log JSON output (default: changes_TIMESTAMP.json)
+- `--parallel`: Use parallel processing for better performance (default: true)
+- `--chunk-size`: Chunk size for parallel processing (default: 1000)
+- `--ignore-columns`: Comma-separated list of column names to ignore when determining differences
+- `--cpuprofile`: Write CPU profile to file
+- `--memprofile`: Write memory profile to file
+
+## How It Works
+
+The tool compares two CSV files using the following logic:
+
+1. **New Rows**: Rows with primary keys that only exist in the current file are considered new and included in the delta output.
+2. **Changed Rows**: Rows with the same primary key but different values (excluding ignored columns) are included in both the delta output and changes log.
+3. **Identical Rows**: Rows with the same primary key and values are ignored.
+4. **Removed Rows**: Rows with primary keys that only exist in the previous file are ignored.
+
+## Examples
+
+### Basic Usage
 
 ```bash
-go build -o csv-compare cmd/csv-compare/main.go
+# Compare two specific files using 'id' as the primary key
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv
 ```
 
-## Requirements
+### Auto-detect Latest Files
 
-- Go 1.18 or higher
+```bash
+# Compare the two most recent CSV files in a directory
+csv-compare --primary-key "id" --dir /path/to/csv/files
+```
+
+### Ignore Specific Columns
+
+```bash
+# Compare files while ignoring 'last_modified' and 'updated_at' columns
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv --ignore-columns "last_modified,updated_at"
+```
+
+### Performance Tuning
+
+```bash
+# Use a larger chunk size for better performance with large files
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv --chunk-size 5000
+```
+
+### Profiling
+
+```bash
+# Generate CPU and memory profiles
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv --cpuprofile cpu.prof --memprofile mem.prof
+```
+
+## Output Files
+
+### Delta CSV
+
+The delta CSV file contains:
+- All new rows from the current file
+- All changed rows from the current file
+- Headers from the original files
+
+### Changes Log (JSON)
+
+The changes log contains detailed information about changed rows:
+- Row index
+- Column name
+- Previous value
+- Current value
+
+Example JSON output:
+```json
+[
+  {
+    "row_index": 42,
+    "changes": {
+      "name": {
+        "column": "name",
+        "previous_value": "John Doe",
+        "current_value": "John Smith"
+      },
+      "email": {
+        "column": "email",
+        "previous_value": "john@example.com",
+        "current_value": "john.smith@example.com"
+      }
+    }
+  }
+]
+```
+
+## Performance Considerations
+
+- The tool uses parallel processing by default for better performance
+- Adjust the chunk size based on your file sizes and available memory
+- For very large files, consider using gzipped CSV files to reduce I/O
+- Use the profiling flags to identify performance bottlenecks
+
+## License
+
+MIT License
 

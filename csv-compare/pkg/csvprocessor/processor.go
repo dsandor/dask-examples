@@ -35,11 +35,12 @@ type CSVProcessor struct {
 	headerMap         map[string]int
 	IgnoredColumns    []string
 	ignoredColumnsMap map[string]bool
-	prevDataMutex     sync.Mutex // Add mutex for protecting prevData access
+	prevDataMutex     sync.Mutex
+	PrimaryKey        string // Add primary key field
 }
 
 // NewCSVProcessor creates a new CSVProcessor instance
-func NewCSVProcessor(previousFile, currentFile string, ignoredColumns []string) *CSVProcessor {
+func NewCSVProcessor(previousFile, currentFile string, primaryKey string, ignoredColumns []string) *CSVProcessor {
 	// Create map for faster lookups of ignored columns
 	ignoredColumnsMap := make(map[string]bool)
 	for _, col := range ignoredColumns {
@@ -56,6 +57,7 @@ func NewCSVProcessor(previousFile, currentFile string, ignoredColumns []string) 
 	return &CSVProcessor{
 		PreviousFile:      previousFile,
 		CurrentFile:       currentFile,
+		PrimaryKey:        primaryKey,
 		headerMap:         make(map[string]int),
 		IgnoredColumns:    ignoredColumns,
 		ignoredColumnsMap: ignoredColumnsMap,
@@ -252,13 +254,13 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	fileutils.LogInfo("Starting parallel comparison between files with chunk size: %s", fileutils.Highlight(fmt.Sprintf("%d", chunkSize)))
 
 	// Load both files into memory
-	prevData, err := loadCSVToMap(p.PreviousFile)
+	prevData, err := loadCSVToMap(p.PreviousFile, p.PrimaryKey)
 	if err != nil {
 		fileutils.LogError("Error loading previous file: %v", err)
 		return fmt.Errorf("error loading previous file: %w", err)
 	}
 
-	currData, headers, err := loadCSVToSlice(p.CurrentFile)
+	currData, headers, err := loadCSVToSlice(p.CurrentFile, p.PrimaryKey)
 	if err != nil {
 		fileutils.LogError("Error loading current file: %v", err)
 		return fmt.Errorf("error loading current file: %w", err)
@@ -268,6 +270,9 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	for i, header := range p.Headers {
 		p.headerMap[header] = i
 	}
+
+	// Find primary key index
+	keyIndex := p.headerMap[p.PrimaryKey]
 
 	// Create delta CSV file
 	deltaFile, err := os.Create(deltaCSVPath)
@@ -307,7 +312,6 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			keyIndex := 0 // Assuming first column is the key
 
 			for chunk := range workCh {
 				for rowIndex, currRecord := range chunk {
@@ -441,21 +445,32 @@ func openCSVReader(filePath string) (*csv.Reader, func(), error) {
 }
 
 // loadCSVToMap loads a CSV file into a map for fast lookups
-func loadCSVToMap(filePath string) (map[string][]string, error) {
+func loadCSVToMap(filePath string, primaryKey string) (map[string][]string, error) {
 	reader, closer, err := openCSVReader(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer closer()
 
-	// Skip header
-	_, err = reader.Read()
+	// Read header
+	headers, err := reader.Read()
 	if err != nil {
 		return nil, err
 	}
 
+	// Find primary key index
+	keyIndex := -1
+	for i, header := range headers {
+		if header == primaryKey {
+			keyIndex = i
+			break
+		}
+	}
+	if keyIndex == -1 {
+		return nil, fmt.Errorf("primary key '%s' not found in headers", primaryKey)
+	}
+
 	data := make(map[string][]string)
-	keyIndex := 0 // Assuming first column is the key
 
 	for {
 		record, err := reader.Read()
@@ -475,7 +490,7 @@ func loadCSVToMap(filePath string) (map[string][]string, error) {
 }
 
 // loadCSVToSlice loads a CSV file into a slice for sequential processing
-func loadCSVToSlice(filePath string) ([][]string, []string, error) {
+func loadCSVToSlice(filePath string, primaryKey string) ([][]string, []string, error) {
 	reader, closer, err := openCSVReader(filePath)
 	if err != nil {
 		return nil, nil, err
@@ -486,6 +501,18 @@ func loadCSVToSlice(filePath string) ([][]string, []string, error) {
 	headers, err := reader.Read()
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Verify primary key exists
+	keyIndex := -1
+	for i, header := range headers {
+		if header == primaryKey {
+			keyIndex = i
+			break
+		}
+	}
+	if keyIndex == -1 {
+		return nil, nil, fmt.Errorf("primary key '%s' not found in headers", primaryKey)
 	}
 
 	var data [][]string

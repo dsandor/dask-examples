@@ -22,7 +22,7 @@ func printBanner() {
 	bold := color.New(color.Bold).SprintFunc()
 	cyan := color.New(color.FgCyan, color.Bold).SprintFunc()
 	green := color.New(color.FgGreen).SprintFunc()
-	
+
 	fmt.Println("")
 	fmt.Println(cyan("  ____   ______     __   ____                                  "))
 	fmt.Println(cyan(" / ___\\ /_  __/    / /  / __ \\___  __ _  ___  __ _ _ __ ___ "))
@@ -39,7 +39,7 @@ func printBanner() {
 func main() {
 	// Print banner
 	printBanner()
-	
+
 	// Define command-line flags
 	dirPath := flag.String("dir", ".", "Directory path containing CSV files (.csv or .csv.gz)")
 	deltaPath := flag.String("delta", "", "Path for the delta CSV output (default: delta_TIMESTAMP.csv)")
@@ -48,15 +48,23 @@ func main() {
 	chunkSize := flag.Int("chunk-size", 1000, "Chunk size for parallel processing")
 	cpuProfile := flag.String("cpuprofile", "", "Write CPU profile to file")
 	memProfile := flag.String("memprofile", "", "Write memory profile to file")
-	
+
 	// Custom CSV files
 	prevFile := flag.String("prev", "", "Specific previous CSV file to use (instead of auto-detecting)")
 	currFile := flag.String("curr", "", "Specific current CSV file to use (instead of auto-detecting)")
-	
+
+	// Primary key for matching rows
+	primaryKey := flag.String("primary-key", "", "Column name to use as primary key for matching rows (required)")
+
 	// Columns to ignore when comparing
 	ignoreColumnsStr := flag.String("ignore-columns", "", "Comma-separated list of column names to ignore when determining differences")
 
 	flag.Parse()
+
+	// Validate required flags
+	if *primaryKey == "" {
+		log.Fatal("Error: --primary-key flag is required")
+	}
 
 	// CPU profiling if requested
 	if *cpuProfile != "" {
@@ -79,7 +87,7 @@ func main() {
 	if *logPath == "" {
 		*logPath = fmt.Sprintf("changes_%s.json", timestamp)
 	}
-	
+
 	fileutils.LogInfo("Starting CSV Compare tool")
 
 	// Find CSV files
@@ -108,7 +116,7 @@ func main() {
 	if strings.HasSuffix(currentFile, ".gz") {
 		currType = "Gzipped CSV"
 	}
-	
+
 	fmt.Printf("  Previous: %s (%s)\n", fileutils.Highlight(filepath.Base(previousFile)), prevType)
 	fmt.Printf("  Current:  %s (%s)\n", fileutils.Highlight(filepath.Base(currentFile)), currType)
 	fmt.Println("")
@@ -127,7 +135,7 @@ func main() {
 	}
 
 	// Create processor
-	processor := csvprocessor.NewCSVProcessor(previousFile, currentFile, ignoredColumns)
+	processor := csvprocessor.NewCSVProcessor(previousFile, currentFile, *primaryKey, ignoredColumns)
 
 	// Start timer
 	startTime := time.Now()
