@@ -36,7 +36,11 @@ type CSVProcessor struct {
 	IgnoredColumns    []string
 	ignoredColumnsMap map[string]bool
 	prevDataMutex     sync.Mutex
-	PrimaryKey        string // Add primary key field
+	PrimaryKey        string
+	// Add summary statistics
+	CurrentRowCount int
+	DeltaRowCount   int
+	ChangedColumns  map[string]bool
 }
 
 // NewCSVProcessor creates a new CSVProcessor instance
@@ -61,6 +65,7 @@ func NewCSVProcessor(previousFile, currentFile string, primaryKey string, ignore
 		headerMap:         make(map[string]int),
 		IgnoredColumns:    ignoredColumns,
 		ignoredColumnsMap: ignoredColumnsMap,
+		ChangedColumns:    make(map[string]bool),
 	}
 }
 
@@ -271,6 +276,9 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 		p.headerMap[header] = i
 	}
 
+	// Set current row count
+	p.CurrentRowCount = len(currData)
+
 	// Find primary key index
 	keyIndex := p.headerMap[p.PrimaryKey]
 
@@ -328,6 +336,7 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 					// If record doesn't exist in previous file or has changes, write to delta
 					if !exists || !p.recordsMatch(prevRecord, currRecord) {
 						deltaRecordsCh <- currRecord
+						p.DeltaRowCount++
 
 						// If record exists in previous file, log changes
 						if exists {
@@ -350,6 +359,7 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 										PreviousVal: prevRecord[i],
 										CurrentVal:  val,
 									}
+									p.ChangedColumns[colName] = true
 								}
 							}
 
@@ -409,6 +419,15 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(changes); err != nil {
 		return fmt.Errorf("error writing changes to log file: %w", err)
+	}
+
+	// Print summary
+	fmt.Println("\nSummary:")
+	fmt.Printf("Current file row count: %d\n", p.CurrentRowCount)
+	fmt.Printf("Delta file row count: %d\n", p.DeltaRowCount)
+	fmt.Println("Columns with differences:")
+	for col := range p.ChangedColumns {
+		fmt.Printf("  - %s\n", col)
 	}
 
 	return nil

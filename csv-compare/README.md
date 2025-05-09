@@ -10,7 +10,8 @@ A high-performance tool for comparing CSV files and generating delta reports. Th
 - Detailed change tracking with JSON output
 - Configurable column ignoring
 - CPU and memory profiling support
-- Auto-detection of latest CSV files in a directory
+- Auto-detect latest CSV files in a directory
+- Summary statistics of changes
 
 ## Installation
 
@@ -50,44 +51,25 @@ The tool compares two CSV files using the following logic:
 3. **Identical Rows**: Rows with the same primary key and values are ignored.
 4. **Removed Rows**: Rows with primary keys that only exist in the previous file are ignored.
 
-## Examples
+## Output
 
-### Basic Usage
+### Summary Statistics
 
-```bash
-# Compare two specific files using 'id' as the primary key
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv
+At the end of processing, the tool displays a summary showing:
+- Total number of rows in the current file
+- Number of rows in the delta file (new + changed rows)
+- List of all columns that had differences
+
+Example output:
 ```
-
-### Auto-detect Latest Files
-
-```bash
-# Compare the two most recent CSV files in a directory
-csv-compare --primary-key "id" --dir /path/to/csv/files
+Summary:
+Current file row count: 1000
+Delta file row count: 150
+Columns with differences:
+  - name
+  - email
+  - status
 ```
-
-### Ignore Specific Columns
-
-```bash
-# Compare files while ignoring 'last_modified' and 'updated_at' columns
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv --ignore-columns "last_modified,updated_at"
-```
-
-### Performance Tuning
-
-```bash
-# Use a larger chunk size for better performance with large files
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv --chunk-size 5000
-```
-
-### Profiling
-
-```bash
-# Generate CPU and memory profiles
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv --cpuprofile cpu.prof --memprofile mem.prof
-```
-
-## Output Files
 
 ### Delta CSV
 
@@ -123,6 +105,43 @@ Example JSON output:
     }
   }
 ]
+```
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Compare two specific files using 'id' as the primary key
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv
+```
+
+### Auto-detect Latest Files
+
+```bash
+# Compare the two most recent CSV files in a directory
+csv-compare --primary-key "id" --dir /path/to/csv/files
+```
+
+### Ignore Specific Columns
+
+```bash
+# Compare files while ignoring 'last_modified' and 'updated_at' columns
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv --ignore-columns "last_modified,updated_at"
+```
+
+### Performance Tuning
+
+```bash
+# Use a larger chunk size for better performance with large files
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv --chunk-size 5000
+```
+
+### Profiling
+
+```bash
+# Generate CPU and memory profiles
+csv-compare --primary-key "id" --prev previous.csv --curr current.csv --cpuprofile cpu.prof --memprofile mem.prof
 ```
 
 ## Performance Considerations
