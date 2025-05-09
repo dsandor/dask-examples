@@ -627,7 +627,12 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 
 	// Write headers for included columns
 	for i, colIndex := range columnIndices {
-		cell := fmt.Sprintf("%c1", 'A'+i)
+		colName, err := excelize.ColumnNumberToName(i + 1)
+		if err != nil {
+			f.Close()
+			return fmt.Errorf("error converting column number to name: %w", err)
+		}
+		cell := colName + "1"
 		if err := f.SetCellValue(sheetName, cell, headers[colIndex]); err != nil {
 			f.Close()
 			return fmt.Errorf("error writing header at cell %s: %w", cell, err)
@@ -670,7 +675,13 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 
 		// Write the row (only included columns)
 		for i, colIndex := range columnIndices {
-			cell := fmt.Sprintf("%c%d", 'A'+i, rowNum)
+			colName, err := excelize.ColumnNumberToName(i + 1)
+			if err != nil {
+				f.Close()
+				return fmt.Errorf("error converting column number to name: %w", err)
+			}
+			cell := fmt.Sprintf("%s%d", colName, rowNum)
+
 			// Handle case where record has fewer fields than expected
 			if colIndex < len(record) {
 				// Ensure the value is properly formatted as a string
@@ -720,10 +731,14 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 
 	// Auto-fit columns
 	for i := range columnIndices {
-		col := string('A' + i)
-		if err := f.SetColWidth(sheetName, col, col, 15); err != nil {
+		colName, err := excelize.ColumnNumberToName(i + 1)
+		if err != nil {
 			f.Close()
-			return fmt.Errorf("error setting column width for %s: %w", col, err)
+			return fmt.Errorf("error converting column number to name: %w", err)
+		}
+		if err := f.SetColWidth(sheetName, colName, colName, 15); err != nil {
+			f.Close()
+			return fmt.Errorf("error setting column width for %s: %w", colName, err)
 		}
 	}
 
