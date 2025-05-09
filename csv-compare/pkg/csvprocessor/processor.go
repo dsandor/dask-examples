@@ -571,7 +571,6 @@ func loadCSVToSlice(filePath string, primaryKey string) ([][]string, []string, e
 func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesMap map[string]map[string]ColumnChange, excelPath string) error {
 	// Create a new Excel file
 	f := excelize.NewFile()
-	defer f.Close()
 
 	// Create a new sheet
 	sheetName := "Changes"
@@ -580,6 +579,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	// Read the delta CSV file
 	file, err := os.Open(deltaCSVPath)
 	if err != nil {
+		f.Close()
 		return fmt.Errorf("error opening delta file: %w", err)
 	}
 	defer file.Close()
@@ -589,6 +589,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	reader.FieldsPerRecord = -1 // Allow variable number of fields
 	headers, err := reader.Read()
 	if err != nil {
+		f.Close()
 		return fmt.Errorf("error reading headers: %w", err)
 	}
 
@@ -601,6 +602,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 		}
 	}
 	if pkIndex == -1 {
+		f.Close()
 		return fmt.Errorf("primary key '%s' not found in headers", p.PrimaryKey)
 	}
 
@@ -626,7 +628,10 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	// Write headers for included columns
 	for i, colIndex := range columnIndices {
 		cell := fmt.Sprintf("%c1", 'A'+i)
-		f.SetCellValue(sheetName, cell, headers[colIndex])
+		if err := f.SetCellValue(sheetName, cell, headers[colIndex]); err != nil {
+			f.Close()
+			return fmt.Errorf("error writing header at cell %s: %w", cell, err)
+		}
 	}
 
 	// Create style for highlighted cells
@@ -638,6 +643,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 		},
 	})
 	if err != nil {
+		f.Close()
 		return fmt.Errorf("error creating style: %w", err)
 	}
 
@@ -650,6 +656,7 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 			break
 		}
 		if err != nil {
+			f.Close()
 			return fmt.Errorf("error reading record at line %d: %w", lineNum, err)
 		}
 
@@ -671,9 +678,17 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 				if value == "" {
 					value = " " // Use a space instead of empty string to prevent Excel from deleting the column
 				}
-				f.SetCellValue(sheetName, cell, value)
+				// Clean the value to prevent Excel corruption
+				value = cleanExcelValue(value)
+				if err := f.SetCellValue(sheetName, cell, value); err != nil {
+					f.Close()
+					return fmt.Errorf("error writing value at cell %s: %w", cell, err)
+				}
 			} else {
-				f.SetCellValue(sheetName, cell, " ") // Use a space instead of empty string
+				if err := f.SetCellValue(sheetName, cell, " "); err != nil {
+					f.Close()
+					return fmt.Errorf("error writing empty value at cell %s: %w", cell, err)
+				}
 			}
 
 			// If this row has changes, highlight the changed cells
@@ -681,15 +696,21 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 				colName := headers[colIndex]
 				if change, hasChange := changes[colName]; hasChange {
 					// Apply highlight style
-					f.SetCellStyle(sheetName, cell, cell, style)
+					if err := f.SetCellStyle(sheetName, cell, cell, style); err != nil {
+						f.Close()
+						return fmt.Errorf("error applying style at cell %s: %w", cell, err)
+					}
 
 					// Add comment with previous value
-					comment := fmt.Sprintf("Previous value: %v", change.PreviousVal)
-					f.AddComment(sheetName, excelize.Comment{
+					comment := fmt.Sprintf("Previous value: %v", cleanExcelValue(fmt.Sprintf("%v", change.PreviousVal)))
+					if err := f.AddComment(sheetName, excelize.Comment{
 						Cell:   cell,
 						Author: "CSV Compare",
 						Text:   comment,
-					})
+					}); err != nil {
+						f.Close()
+						return fmt.Errorf("error adding comment at cell %s: %w", cell, err)
+					}
 				}
 			}
 		}
@@ -700,13 +721,49 @@ func (p *CSVProcessor) generateExcelWithHighlights(deltaCSVPath string, changesM
 	// Auto-fit columns
 	for i := range columnIndices {
 		col := string('A' + i)
-		f.SetColWidth(sheetName, col, col, 15)
+		if err := f.SetColWidth(sheetName, col, col, 15); err != nil {
+			f.Close()
+			return fmt.Errorf("error setting column width for %s: %w", col, err)
+		}
 	}
 
 	// Save the file
 	if err := f.SaveAs(excelPath); err != nil {
+		f.Close()
 		return fmt.Errorf("error saving Excel file: %w", err)
 	}
 
+	// Close the file
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing Excel file: %w", err)
+	}
+
 	return nil
+}
+
+// cleanExcelValue sanitizes a value to prevent Excel corruption
+func cleanExcelValue(value string) string {
+	// Remove any control characters
+	value = strings.Map(func(r rune) rune {
+		if r < 32 && r != '\t' && r != '\n' && r != '\r' {
+			return -1
+		}
+		return r
+	}, value)
+
+	// Replace any problematic characters
+	value = strings.ReplaceAll(value, "\x00", "")
+	value = strings.ReplaceAll(value, "\x1A", "")
+	value = strings.ReplaceAll(value, "\x1B", "")
+	value = strings.ReplaceAll(value, "\x1C", "")
+	value = strings.ReplaceAll(value, "\x1D", "")
+	value = strings.ReplaceAll(value, "\x1E", "")
+	value = strings.ReplaceAll(value, "\x1F", "")
+
+	// Ensure the value is not too long (Excel has a limit of 32,767 characters per cell)
+	if len(value) > 32000 {
+		value = value[:32000]
+	}
+
+	return value
 }
