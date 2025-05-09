@@ -16,8 +16,8 @@ import (
 
 // DeltaRecord represents a change between two CSV records
 type DeltaRecord struct {
-	RowIndex int
-	Changes  map[string]ColumnChange
+	PrimaryKey string
+	Changes    map[string]ColumnChange
 }
 
 // ColumnChange represents a change in a column value
@@ -181,8 +181,8 @@ func (p *CSVProcessor) CompareCSVs(deltaCSVPath, changeLogPath string) error {
 			// If record exists in previous file, log changes
 			if exists {
 				deltaRecord := DeltaRecord{
-					RowIndex: rowIndex,
-					Changes:  make(map[string]ColumnChange),
+					PrimaryKey: key,
+					Changes:    make(map[string]ColumnChange),
 				}
 
 				for i, val := range currRecord {
@@ -322,7 +322,7 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 			defer wg.Done()
 
 			for chunk := range workCh {
-				for rowIndex, currRecord := range chunk {
+				for _, currRecord := range chunk {
 					if len(currRecord) <= keyIndex {
 						continue
 					}
@@ -341,8 +341,8 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 						// If record exists in previous file, log changes
 						if exists {
 							deltaRecord := DeltaRecord{
-								RowIndex: rowIndex,
-								Changes:  make(map[string]ColumnChange),
+								PrimaryKey: key,
+								Changes:    make(map[string]ColumnChange),
 							}
 
 							for i, val := range currRecord {
@@ -414,10 +414,16 @@ func (p *CSVProcessor) CompareCSVsParallel(deltaCSVPath, changeLogPath string, c
 	// Flush delta writer
 	deltaWriter.Flush()
 
+	// Convert changes to map with primary keys as top-level properties
+	changesMap := make(map[string]map[string]ColumnChange)
+	for _, change := range changes {
+		changesMap[change.PrimaryKey] = change.Changes
+	}
+
 	// Write changes to JSON file
 	encoder := json.NewEncoder(changesFile)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(changes); err != nil {
+	if err := encoder.Encode(changesMap); err != nil {
 		return fmt.Errorf("error writing changes to log file: %w", err)
 	}
 
