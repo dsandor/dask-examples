@@ -8,17 +8,18 @@ import json
 import time
 import argparse
 from datetime import datetime
-import dask.dataframe as dd
 import pandas as pd
 import numpy as np
+from pathlib import Path
+import gzip
 
 
 class CSVCompare:
     """
     A high-performance tool for comparing CSV files and generating delta reports.
-    Uses Dask for parallel processing of large files.
+    Uses chunked processing for memory efficiency with large files.
     """
-    def __init__(self, prev_file, curr_file, primary_key, ignore_columns=None, chunk_size=None):
+    def __init__(self, prev_file, curr_file, primary_key, ignore_columns=None, chunk_size=None, unzip_files=False):
         """
         Initialize the CSV comparison tool.
         
@@ -39,6 +40,8 @@ class CSVCompare:
         if 'FILEDATE' not in self.ignore_columns:
             self.ignore_columns.append('FILEDATE')
         self.chunk_size = chunk_size
+        self.unzip_files = unzip_files
+        self.temp_files = []  # Track temporary unzipped files
         
         # Add default columns to ignore
         self.stats = {
@@ -49,27 +52,63 @@ class CSVCompare:
             'removed_records': 0
         }
     
+    def unzip_file(self, file_path):
+        """
+        Unzip a gzipped file to a temporary location for faster processing.
+        
+        Args:
+            file_path (str): Path to the gzipped file
+            
+        Returns:
+            str: Path to the unzipped temporary file
+        """
+        if not file_path.endswith('.gz'):
+            return file_path
+        
+        print(f"Unzipping file: {file_path}")
+        temp_file = file_path[:-3] + ".temp.csv"
+        
+        with gzip.open(file_path, 'rb') as f_in:
+            with open(temp_file, 'wb') as f_out:
+                f_out.write(f_in.read())
+        
+        self.temp_files.append(temp_file)
+        return temp_file
+    
     def read_csv_file(self, file_path):
         """
-        Read a CSV file (gzipped or not) into a Dask DataFrame.
+        Read a CSV file (gzipped or not) into a pandas DataFrame.
+        For large files, this uses chunked reading to manage memory usage.
         
         Args:
             file_path (str): Path to the CSV file
             
         Returns:
-            dask.DataFrame: The loaded DataFrame
+            pandas.DataFrame: The loaded DataFrame
         """
-        print(f"Reading file: {file_path}")
-        compression = 'gzip' if file_path.endswith('.gz') else None
-        
-        # Use Dask to read the file in chunks
-        if self.chunk_size:
-            df = dd.read_csv(file_path, compression=compression, blocksize=self.chunk_size)
+        # Unzip file if requested
+        if self.unzip_files and file_path.endswith('.gz'):
+            file_path = self.unzip_file(file_path)
+            compression = None
         else:
-            df = dd.read_csv(file_path, compression=compression)
-            
-        # Ensure primary key is a string to avoid type comparison issues
-        df[self.primary_key] = df[self.primary_key].astype(str)
+            compression = 'gzip' if file_path.endswith('.gz') else None
+        
+        print(f"Reading file: {file_path}")
+        
+        # For large files, read in chunks and process
+        if self.chunk_size:
+            chunks = []
+            chunksize = self.chunk_size
+            for chunk in pd.read_csv(file_path, compression=compression, chunksize=chunksize):
+                # Ensure primary key is a string to avoid type comparison issues
+                chunk[self.primary_key] = chunk[self.primary_key].astype(str)
+                chunks.append(chunk)
+            df = pd.concat(chunks, ignore_index=True)
+        else:
+            # For smaller files, read all at once
+            df = pd.read_csv(file_path, compression=compression)
+            # Ensure primary key is a string to avoid type comparison issues
+            df[self.primary_key] = df[self.primary_key].astype(str)
         
         return df
     
@@ -102,69 +141,47 @@ class CSVCompare:
         all_columns = list(curr_df.columns)
         compare_columns = [col for col in all_columns if col not in self.ignore_columns]
         
-        # Set primary key as index for faster joins
-        prev_df = prev_df.set_index(self.primary_key)
-        curr_df = curr_df.set_index(self.primary_key)
-        
         # Store current row count
         self.stats['current_row_count'] = len(curr_df)
         
-        # Find records in current but not in previous (new records)
-        # and records in both but with changes
+        # Create dictionaries for faster lookups
+        print("Creating lookup dictionaries...")
+        prev_dict = {}
+        for _, row in prev_df.iterrows():
+            key = str(row[self.primary_key])
+            prev_dict[key] = row.to_dict()
         
-        # First, identify keys in both dataframes
-        prev_keys = prev_df.index.compute()
-        curr_keys = curr_df.index.compute()
-        
-        # Find new keys (in current but not in previous)
-        new_keys = list(set(curr_keys) - set(prev_keys))
-        self.stats['new_records'] = len(new_keys)
-        
-        # Find removed keys (in previous but not in current)
-        removed_keys = list(set(prev_keys) - set(curr_keys))
-        self.stats['removed_records'] = len(removed_keys)
-        
-        # Find common keys (in both)
-        common_keys = list(set(curr_keys) & set(prev_keys))
-        
-        # Extract records with common keys
-        prev_common = prev_df.loc[common_keys]
-        curr_common = curr_df.loc[common_keys]
-        
-        # Compare only the columns we care about
+        # Process current file and compare with previous
+        print("Comparing files...")
         changes = {}
         changed_keys = []
+        new_keys = []
         
-        # Process in chunks to avoid memory issues
-        chunk_size = 10000  # Adjust based on available memory
-        for i in range(0, len(common_keys), chunk_size):
-            chunk_keys = common_keys[i:i+chunk_size]
+        # Create a set of keys from the previous file for faster lookups
+        prev_keys_set = set(prev_dict.keys())
+        
+        # Process current file
+        for _, row in curr_df.iterrows():
+            key = str(row[self.primary_key])
             
-            # Get chunks from both dataframes
-            prev_chunk = prev_df.loc[chunk_keys].compute()
-            curr_chunk = curr_df.loc[chunk_keys].compute()
-            
-            # Compare each row
-            for key in chunk_keys:
-                if key not in prev_chunk.index or key not in curr_chunk.index:
-                    continue
-                    
-                prev_row = prev_chunk.loc[key]
-                curr_row = curr_chunk.loc[key]
-                
-                # Check for differences in compare columns
+            # Check if key exists in previous file
+            if key in prev_dict:
+                # Compare values for this key
                 row_changes = {}
+                curr_row_dict = row.to_dict()
+                prev_row_dict = prev_dict[key]
+                
                 for col in compare_columns:
-                    if col in prev_row and col in curr_row:
+                    if col in prev_row_dict and col in curr_row_dict:
                         # Handle NaN values properly
-                        prev_val = prev_row[col]
-                        curr_val = curr_row[col]
+                        prev_val = prev_row_dict[col]
+                        curr_val = curr_row_dict[col]
                         
                         # Convert to string for comparison if not NaN
                         if not pd.isna(prev_val) and not pd.isna(curr_val):
                             prev_val = str(prev_val)
                             curr_val = str(curr_val)
-                            
+                        
                         # Compare values
                         if not pd.isna(prev_val) and not pd.isna(curr_val) and prev_val != curr_val:
                             row_changes[col] = {
@@ -178,13 +195,20 @@ class CSVCompare:
                 if row_changes:
                     changes[key] = row_changes
                     changed_keys.append(key)
+            else:
+                # Key doesn't exist in previous file, so it's a new record
+                new_keys.append(key)
+        
+        # Update stats
+        self.stats['new_records'] = len(new_keys)
+        
+        # Find removed keys (in previous but not in current)
+        curr_keys_set = set(curr_df[self.primary_key].astype(str))
+        removed_keys = list(prev_keys_set - curr_keys_set)
+        self.stats['removed_records'] = len(removed_keys)
         
         # Create delta dataframe with new and changed records
-        delta_keys = new_keys + changed_keys
-        delta_df = curr_df.loc[delta_keys].compute()
-        
-        # Reset index to include primary key as a column
-        delta_df = delta_df.reset_index()
+        delta_df = curr_df[curr_df[self.primary_key].astype(str).isin(new_keys + changed_keys)]
         
         # Update stats
         self.stats['delta_row_count'] = len(delta_df)
@@ -209,6 +233,9 @@ class CSVCompare:
             # Convert set to list for JSON serialization
             json.dump(self.stats, f, indent=2)
         
+        # Clean up temporary files
+        self.cleanup_temp_files()
+        
         elapsed_time = time.time() - start_time
         print(f"Comparison completed in {elapsed_time:.2f} seconds")
         print(f"Summary:")
@@ -224,6 +251,18 @@ class CSVCompare:
                 print(f"  - {col}")
         
         return delta_df, changes
+        
+    def cleanup_temp_files(self):
+        """
+        Clean up any temporary files created during processing.
+        """
+        for temp_file in self.temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    print(f"Removing temporary file: {temp_file}")
+                    os.remove(temp_file)
+            except Exception as e:
+                print(f"Warning: Could not remove temporary file {temp_file}: {e}")
 
 
 def find_latest_csv_files(directory='.'):
@@ -262,7 +301,8 @@ def main():
     parser.add_argument('--delta', help='Path for delta CSV output')
     parser.add_argument('--log', help='Path for changes log JSON output')
     parser.add_argument('--ignore-columns', help='Comma-separated list of columns to ignore')
-    parser.add_argument('--chunk-size', type=int, help='Chunk size for processing (in bytes)')
+    parser.add_argument('--chunk-size', type=int, help='Chunk size for processing (number of rows per chunk)')
+    parser.add_argument('--unzip', action='store_true', help='Unzip files before processing for better performance')
     
     args = parser.parse_args()
     
@@ -289,7 +329,8 @@ def main():
         curr_file=curr_file,
         primary_key=args.primary_key,
         ignore_columns=ignore_columns,
-        chunk_size=args.chunk_size
+        chunk_size=args.chunk_size,
+        unzip_files=args.unzip
     )
     
     comparator.compare(delta_path, log_path)
