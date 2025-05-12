@@ -7,11 +7,15 @@ import sys
 import json
 import time
 import argparse
+import warnings
 from datetime import datetime
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import gzip
+
+# Suppress pandas warnings about mixed types
+warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
 
 
 class CSVCompare:
@@ -19,7 +23,8 @@ class CSVCompare:
     A high-performance tool for comparing CSV files and generating delta reports.
     Uses chunked processing for memory efficiency with large files.
     """
-    def __init__(self, prev_file, curr_file, primary_key, ignore_columns=None, chunk_size=None, unzip_files=False, detailed_timing=True):
+    def __init__(self, prev_file, curr_file, primary_key, ignore_columns=None, chunk_size=None, 
+                 unzip_files=False, detailed_timing=True, dtype_handling='auto'):
         """
         Initialize the CSV comparison tool.
         
@@ -44,6 +49,7 @@ class CSVCompare:
         self.temp_files = []  # Track temporary unzipped files
         self.detailed_timing = detailed_timing
         self.timings = {}  # Store timing information for different stages
+        self.dtype_handling = dtype_handling  # How to handle mixed data types
         
         # Add default columns to ignore
         self.stats = {
@@ -161,20 +167,43 @@ class CSVCompare:
             
             def _read_file():
                 try:
+                    # Set up read_csv parameters based on dtype handling strategy
+                    csv_params = {
+                        'filepath_or_buffer': file_path,
+                        'compression': compression,
+                    }
+                    
+                    # Configure dtype handling based on strategy
+                    if self.dtype_handling == 'text':
+                        # Treat all columns as text - much faster, avoids dtype issues
+                        csv_params['dtype'] = str
+                        csv_params['low_memory'] = True  # Can use low_memory with string dtype
+                    elif self.dtype_handling == 'fast':
+                        # Fast mode - use low_memory for speed
+                        csv_params['low_memory'] = True
+                        # Suppress warnings in fast mode
+                        warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
+                    else:  # 'auto' mode
+                        # Use low_memory=False for more accurate type inference
+                        csv_params['low_memory'] = False
+                    
                     # For large files, read in chunks and process
                     if self.chunk_size:
                         chunks = []
-                        chunksize = self.chunk_size
-                        for chunk in pd.read_csv(file_path, compression=compression, chunksize=chunksize, low_memory=False):
+                        csv_params['chunksize'] = self.chunk_size
+                        
+                        # Read chunks
+                        for chunk in pd.read_csv(**csv_params):
                             # Ensure primary key is a string to avoid type comparison issues
                             chunk[self.primary_key] = chunk[self.primary_key].astype(str)
                             chunks.append(chunk)
+                            
                         if not chunks:
                             raise ValueError(f"No data was read from file: {file_path}")
                         return pd.concat(chunks, ignore_index=True)
                     else:
                         # For smaller files, read all at once
-                        df = pd.read_csv(file_path, compression=compression, low_memory=False)
+                        df = pd.read_csv(**csv_params)
                         if df.empty:
                             raise ValueError(f"File contains no data: {file_path}")
                         # Ensure primary key is a string to avoid type comparison issues
@@ -227,8 +256,17 @@ class CSVCompare:
         print("Creating lookup dictionaries...")
         
         def _create_lookup_dict():
+            # Optimize: Use a dictionary comprehension for better performance
+            # Only include columns we care about to save memory
+            columns_to_keep = [self.primary_key] + compare_columns
+            columns_to_keep = list(set(columns_to_keep))  # Remove duplicates
+            
+            # Filter DataFrame to only include columns we need
+            filtered_prev_df = prev_df[columns_to_keep]
+            
+            # Create dictionary with primary key as key and row as value
             prev_dict = {}
-            for _, row in prev_df.iterrows():
+            for _, row in filtered_prev_df.iterrows():
                 key = str(row[self.primary_key])
                 prev_dict[key] = row.to_dict()
             return prev_dict
@@ -243,51 +281,76 @@ class CSVCompare:
             changed_keys = []
             new_keys = []
             
-            # Create a set of keys from the previous file for faster lookups
+            # Optimize: Create a set of keys from the previous file for faster lookups
             prev_keys_set = set(prev_dict.keys())
-        
-            # Process current file
-            for _, row in curr_df.iterrows():
-                key = str(row[self.primary_key])
+            
+            # Optimize: Filter current DataFrame to only include columns we need
+            columns_to_keep = [self.primary_key] + compare_columns
+            columns_to_keep = list(set(columns_to_keep))  # Remove duplicates
+            filtered_curr_df = curr_df[columns_to_keep]
+            
+            # Optimize: Convert primary key column to string once for the whole DataFrame
+            # This avoids repeated conversions in the loop
+            filtered_curr_df[self.primary_key] = filtered_curr_df[self.primary_key].astype(str)
+            
+            # Process current file in batches for better performance
+            batch_size = 10000  # Process 10,000 rows at a time
+            total_rows = len(filtered_curr_df)
+            
+            for start_idx in range(0, total_rows, batch_size):
+                end_idx = min(start_idx + batch_size, total_rows)
                 
-                # Check if key exists in previous file
-                if key in prev_dict:
-                    # Compare values for this key
-                    row_changes = {}
-                    curr_row_dict = row.to_dict()
-                    prev_row_dict = prev_dict[key]
+                # Get batch of rows
+                batch = filtered_curr_df.iloc[start_idx:end_idx]
+                
+                # Process each row in the batch
+                for _, row in batch.iterrows():
+                    key = row[self.primary_key]  # Already converted to string above
                     
-                    for col in compare_columns:
-                        if col in prev_row_dict and col in curr_row_dict:
-                            # Handle NaN values properly
-                            prev_val = prev_row_dict[col]
-                            curr_val = curr_row_dict[col]
-                            
-                            # Convert to string for comparison if not NaN
-                            if not pd.isna(prev_val) and not pd.isna(curr_val):
-                                prev_val = str(prev_val)
-                                curr_val = str(curr_val)
-                            
-                            # Compare values
-                            if not pd.isna(prev_val) and not pd.isna(curr_val) and prev_val != curr_val:
-                                row_changes[col] = {
-                                    "column": col,
-                                    "previous_value": prev_val,
-                                    "current_value": curr_val
-                                }
-                                # Track columns with differences
-                                self.stats['changed_columns'].add(col)
-                    
-                    # If changes were found, add to the changes dictionary
-                    if row_changes:
-                        changes[key] = row_changes
-                        changed_keys.append(key)
-                else:
-                    # Key doesn't exist in previous file, so it's a new record
-                    new_keys.append(key)
+                    # Check if key exists in previous file
+                    if key in prev_dict:
+                        # Compare values for this key
+                        row_changes = {}
+                        curr_row_dict = row.to_dict()
+                        prev_row_dict = prev_dict[key]
+                        
+                        for col in compare_columns:
+                            if col in prev_row_dict and col in curr_row_dict:
+                                # Handle NaN values properly
+                                prev_val = prev_row_dict[col]
+                                curr_val = curr_row_dict[col]
+                                
+                                # If using text_only mode, values are already strings
+                                if self.dtype_handling != 'text':
+                                    # Convert to string for comparison if not NaN
+                                    if not pd.isna(prev_val) and not pd.isna(curr_val):
+                                        prev_val = str(prev_val)
+                                        curr_val = str(curr_val)
+                                
+                                # Compare values
+                                if not pd.isna(prev_val) and not pd.isna(curr_val) and prev_val != curr_val:
+                                    row_changes[col] = {
+                                        "column": col,
+                                        "previous_value": prev_val,
+                                        "current_value": curr_val
+                                    }
+                                    # Track columns with differences
+                                    self.stats['changed_columns'].add(col)
+                        
+                        # If changes were found, add to the changes dictionary
+                        if row_changes:
+                            changes[key] = row_changes
+                            changed_keys.append(key)
+                    else:
+                        # Key doesn't exist in previous file, so it's a new record
+                        new_keys.append(key)
+                
+                # Print progress every 100,000 rows
+                if end_idx % 100000 == 0 or end_idx == total_rows:
+                    print(f"Processed {end_idx}/{total_rows} rows ({end_idx/total_rows*100:.1f}%)")
             
             # Find removed keys (in previous but not in current)
-            curr_keys_set = set(curr_df[self.primary_key].astype(str))
+            curr_keys_set = set(filtered_curr_df[self.primary_key])  # Already strings
             removed_keys = list(prev_keys_set - curr_keys_set)
             
             return changes, changed_keys, new_keys, removed_keys
@@ -437,6 +500,9 @@ def main():
     parser.add_argument('--unzip', action='store_true', help='Unzip files before processing for better performance')
     parser.add_argument('--no-timing', action='store_true', help='Disable detailed timing information')
     parser.add_argument('--verify', action='store_true', help='Verify files before processing (check if they can be read)')
+    parser.add_argument('--no-warnings', action='store_true', help='Suppress pandas warnings about data types')
+    parser.add_argument('--text-only', action='store_true', help='Treat all columns as text (faster, avoids dtype issues)')
+    parser.add_argument('--fast', action='store_true', help='Use fastest processing mode (less memory checking, may be less safe)')
     
     args = parser.parse_args()
     
@@ -482,6 +548,17 @@ def main():
                             raise ValueError(f"File appears to be empty: {file_path}")
                         print(f"Verified file {file_path} (header: {header[:50]}...)")
         
+        # If no-warnings is specified, suppress pandas warnings
+        if args.no_warnings:
+            warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
+        
+        # Determine dtype handling strategy
+        dtype_handling = 'auto'
+        if args.text_only:
+            dtype_handling = 'text'
+        elif args.fast:
+            dtype_handling = 'fast'
+        
         comparator = CSVCompare(
             prev_file=prev_file,
             curr_file=curr_file,
@@ -489,7 +566,8 @@ def main():
             ignore_columns=ignore_columns,
             chunk_size=args.chunk_size,
             unzip_files=args.unzip,
-            detailed_timing=not args.no_timing
+            detailed_timing=not args.no_timing,
+            dtype_handling=dtype_handling
         )
         
         comparator.compare(delta_path, log_path)
