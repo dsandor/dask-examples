@@ -6,6 +6,9 @@ import argparse
 import hashlib
 import json
 import logging
+import gzip
+import zipfile
+import tempfile
 from collections import defaultdict
 
 def setup_logging():
@@ -16,6 +19,37 @@ def setup_logging():
         handlers=[logging.StreamHandler()]
     )
     return logging.getLogger(__name__)
+
+def decompress_file(filepath):
+    """
+    Decompress a file if it's compressed (.zip or .gz).
+    Returns the path to the decompressed file or the original file if not compressed.
+    """
+    logger = logging.getLogger(__name__)
+    
+    if filepath.endswith('.gz'):
+        logger.info(f"Decompressing gzip file: {filepath}")
+        with gzip.open(filepath, 'rt', encoding='utf-8') as f_in:
+            # Create a temporary file to store the decompressed content
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
+            with open(temp_file.name, 'w', encoding='utf-8') as f_out:
+                f_out.write(f_in.read())
+            return temp_file.name
+            
+    elif filepath.endswith('.zip'):
+        logger.info(f"Decompressing zip file: {filepath}")
+        with zipfile.ZipFile(filepath, 'r') as zip_ref:
+            # Create a temporary directory
+            temp_dir = tempfile.mkdtemp()
+            # Extract all contents
+            zip_ref.extractall(temp_dir)
+            # Get the first CSV file from the zip
+            csv_files = [f for f in os.listdir(temp_dir) if f.endswith('.csv')]
+            if not csv_files:
+                raise ValueError(f"No CSV files found in zip archive: {filepath}")
+            return os.path.join(temp_dir, csv_files[0])
+            
+    return filepath
 
 def create_row_hash(row, columns_to_hash, ignore_columns):
     """
@@ -151,6 +185,10 @@ def compare_csvs(old_file, new_file, primary_key, output_dir,
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
+    # Decompress files if needed
+    old_file = decompress_file(old_file)
+    new_file = decompress_file(new_file)
+    
     # Output file paths
     modified_output_path = os.path.join(output_dir, "modified_records.csv")
     new_output_path = os.path.join(output_dir, "new_records.csv")
@@ -263,8 +301,8 @@ def compare_csvs(old_file, new_file, primary_key, output_dir,
 
 def main():
     parser = argparse.ArgumentParser(description="Compare two large CSV files efficiently")
-    parser.add_argument("old_file", help="Path to the old CSV file")
-    parser.add_argument("new_file", help="Path to the new CSV file")
+    parser.add_argument("old_file", help="Path to the old CSV file (supports .csv, .csv.gz, or .zip)")
+    parser.add_argument("new_file", help="Path to the new CSV file (supports .csv, .csv.gz, or .zip)")
     parser.add_argument("primary_key", help="Column name to use as the primary key")
     parser.add_argument("--output-dir", default="comparison_results", 
                         help="Directory to save output files (default: comparison_results)")
