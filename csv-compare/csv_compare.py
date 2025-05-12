@@ -189,6 +189,7 @@ class CSVCompare:
                                 "previous_value": prev_val,
                                 "current_value": curr_val
                             }
+                            # Track columns with differences
                             self.stats['changed_columns'].add(col)
                 
                 # If changes were found, add to the changes dictionary
@@ -229,9 +230,21 @@ class CSVCompare:
         # Write stats to JSON
         stats_path = os.path.splitext(delta_csv_path)[0] + "_stats.json"
         print(f"Writing stats to {stats_path}")
+        
+        # Create a separate file for columns with differences
+        columns_path = os.path.splitext(delta_csv_path)[0] + "_changed_columns.txt"
+        print(f"Writing changed columns to {columns_path}")
+        with open(columns_path, 'w') as f:
+            f.write("Columns with differences:\n")
+            for col in sorted(self.stats['changed_columns']):
+                f.write(f"{col}\n")
+        
+        # Convert set to list for JSON serialization in stats file
+        stats_for_json = self.stats.copy()
+        stats_for_json['changed_columns'] = sorted(list(self.stats['changed_columns']))
+        
         with open(stats_path, 'w') as f:
-            # Convert set to list for JSON serialization
-            json.dump(self.stats, f, indent=2)
+            json.dump(stats_for_json, f, indent=2)
         
         # Clean up temporary files
         self.cleanup_temp_files()
@@ -246,9 +259,10 @@ class CSVCompare:
         print(f"  Removed records: {self.stats['removed_records']}")
         
         if self.stats['changed_columns']:
-            print("Columns with differences:")
-            for col in self.stats['changed_columns']:
+            print("\nColumns with differences:")
+            for col in sorted(self.stats['changed_columns']):
                 print(f"  - {col}")
+            print(f"\nDetailed list of changed columns written to: {os.path.basename(columns_path)}")
         
         return delta_df, changes
         
