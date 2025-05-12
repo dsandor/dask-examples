@@ -96,10 +96,35 @@ class CSVCompare:
         temp_file = file_path[:-3] + ".temp.csv"
         
         def _do_unzip():
-            with gzip.open(file_path, 'rb') as f_in:
-                with open(temp_file, 'wb') as f_out:
-                    f_out.write(f_in.read())
-            return temp_file
+            try:
+                # Check if the file exists and is readable
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"File not found: {file_path}")
+                
+                # Check if file is empty
+                if os.path.getsize(file_path) == 0:
+                    raise ValueError(f"File is empty: {file_path}")
+                
+                # Unzip the file in chunks to handle very large files
+                with gzip.open(file_path, 'rb') as f_in:
+                    with open(temp_file, 'wb') as f_out:
+                        chunk_size = 10 * 1024 * 1024  # 10MB chunks
+                        while True:
+                            chunk = f_in.read(chunk_size)
+                            if not chunk:
+                                break
+                            f_out.write(chunk)
+                
+                # Verify the unzipped file is not empty
+                if os.path.getsize(temp_file) == 0:
+                    raise ValueError(f"Unzipped file is empty: {temp_file}")
+                
+                return temp_file
+            except Exception as e:
+                print(f"Error unzipping file {file_path}: {str(e)}")
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                raise
         
         result = self.time_operation(f"Unzipping {os.path.basename(file_path)}", _do_unzip)
         self.temp_files.append(temp_file)
@@ -116,33 +141,55 @@ class CSVCompare:
         Returns:
             pandas.DataFrame: The loaded DataFrame
         """
-        # Unzip file if requested
-        if self.unzip_files and file_path.endswith('.gz'):
-            file_path = self.unzip_file(file_path)
-            compression = None
-        else:
-            compression = 'gzip' if file_path.endswith('.gz') else None
-        
-        print(f"Reading file: {file_path}")
-        
-        def _read_file():
-            # For large files, read in chunks and process
-            if self.chunk_size:
-                chunks = []
-                chunksize = self.chunk_size
-                for chunk in pd.read_csv(file_path, compression=compression, chunksize=chunksize):
-                    # Ensure primary key is a string to avoid type comparison issues
-                    chunk[self.primary_key] = chunk[self.primary_key].astype(str)
-                    chunks.append(chunk)
-                return pd.concat(chunks, ignore_index=True)
+        try:
+            # Check if the file exists and is readable
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            # Check if file is empty
+            if os.path.getsize(file_path) == 0:
+                raise ValueError(f"File is empty: {file_path}")
+            
+            # Unzip file if requested
+            if self.unzip_files and file_path.endswith('.gz'):
+                file_path = self.unzip_file(file_path)
+                compression = None
             else:
-                # For smaller files, read all at once
-                df = pd.read_csv(file_path, compression=compression)
-                # Ensure primary key is a string to avoid type comparison issues
-                df[self.primary_key] = df[self.primary_key].astype(str)
-                return df
-        
-        return self.time_operation(f"Reading {os.path.basename(file_path)}", _read_file)
+                compression = 'gzip' if file_path.endswith('.gz') else None
+            
+            print(f"Reading file: {file_path}")
+            
+            def _read_file():
+                try:
+                    # For large files, read in chunks and process
+                    if self.chunk_size:
+                        chunks = []
+                        chunksize = self.chunk_size
+                        for chunk in pd.read_csv(file_path, compression=compression, chunksize=chunksize, low_memory=False):
+                            # Ensure primary key is a string to avoid type comparison issues
+                            chunk[self.primary_key] = chunk[self.primary_key].astype(str)
+                            chunks.append(chunk)
+                        if not chunks:
+                            raise ValueError(f"No data was read from file: {file_path}")
+                        return pd.concat(chunks, ignore_index=True)
+                    else:
+                        # For smaller files, read all at once
+                        df = pd.read_csv(file_path, compression=compression, low_memory=False)
+                        if df.empty:
+                            raise ValueError(f"File contains no data: {file_path}")
+                        # Ensure primary key is a string to avoid type comparison issues
+                        df[self.primary_key] = df[self.primary_key].astype(str)
+                        return df
+                except pd.errors.EmptyDataError:
+                    raise ValueError(f"File contains no data or has no columns: {file_path}")
+                except Exception as e:
+                    print(f"Error reading file {file_path}: {str(e)}")
+                    raise
+            
+            return self.time_operation(f"Reading {os.path.basename(file_path)}", _read_file)
+        except Exception as e:
+            print(f"Fatal error processing file {file_path}: {str(e)}")
+            raise
     
     def compare(self, delta_csv_path=None, changes_log_path=None):
         """
@@ -389,6 +436,7 @@ def main():
     parser.add_argument('--chunk-size', type=int, help='Chunk size for processing (number of rows per chunk)')
     parser.add_argument('--unzip', action='store_true', help='Unzip files before processing for better performance')
     parser.add_argument('--no-timing', action='store_true', help='Disable detailed timing information')
+    parser.add_argument('--verify', action='store_true', help='Verify files before processing (check if they can be read)')
     
     args = parser.parse_args()
     
@@ -410,17 +458,50 @@ def main():
     log_path = args.log if args.log else f"changes_{timestamp}.json"
     
     # Create and run the comparison
-    comparator = CSVCompare(
-        prev_file=prev_file,
-        curr_file=curr_file,
-        primary_key=args.primary_key,
-        ignore_columns=ignore_columns,
-        chunk_size=args.chunk_size,
-        unzip_files=args.unzip,
-        detailed_timing=not args.no_timing
-    )
-    
-    comparator.compare(delta_path, log_path)
+    try:
+        # Verify files exist and are readable
+        if args.verify:
+            print("Verifying files...")
+            for file_path in [prev_file, curr_file]:
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"File not found: {file_path}")
+                if os.path.getsize(file_path) == 0:
+                    raise ValueError(f"File is empty: {file_path}")
+                
+                # Try to open and read a small part of the file
+                if file_path.endswith('.gz'):
+                    with gzip.open(file_path, 'rt') as f:
+                        header = f.readline()
+                        if not header:
+                            raise ValueError(f"File appears to be empty or corrupted: {file_path}")
+                        print(f"Verified file {file_path} (header: {header[:50]}...)")
+                else:
+                    with open(file_path, 'r') as f:
+                        header = f.readline()
+                        if not header:
+                            raise ValueError(f"File appears to be empty: {file_path}")
+                        print(f"Verified file {file_path} (header: {header[:50]}...)")
+        
+        comparator = CSVCompare(
+            prev_file=prev_file,
+            curr_file=curr_file,
+            primary_key=args.primary_key,
+            ignore_columns=ignore_columns,
+            chunk_size=args.chunk_size,
+            unzip_files=args.unzip,
+            detailed_timing=not args.no_timing
+        )
+        
+        comparator.compare(delta_path, log_path)
+    except Exception as e:
+        print(f"\nERROR: {str(e)}")
+        print("\nFor troubleshooting, try the following:")
+        print("1. Check if both files exist and are not empty")
+        print("2. Verify that the files are valid CSV files")
+        print("3. Use the --verify flag to check files before processing")
+        print("4. If using --unzip, check if there's enough disk space for uncompressed files")
+        print("5. Try processing without the --unzip flag")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
