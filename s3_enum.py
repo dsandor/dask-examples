@@ -16,10 +16,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Enable botocore debug logging to see the actual API endpoints
-logging.getLogger('botocore').setLevel(logging.DEBUG)
-logging.getLogger('botocore.auth').setLevel(logging.DEBUG)
-logging.getLogger('botocore.endpoint').setLevel(logging.DEBUG)
+# Set boto3 loggers to WARNING by default (will be changed to DEBUG if --debug flag is provided)
+logging.getLogger('botocore').setLevel(logging.WARNING)
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 class S3Enumerator:
     def __init__(self, bucket_name: str, root_path: str = "", include_pattern: Optional[str] = None, 
