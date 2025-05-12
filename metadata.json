@@ -1,0 +1,32 @@
+[
+  {
+    "filename": "BEST_AMER_OUT",
+    "relativePath": "BEST_AMER_OUT/best_amer.out.20250504.csv.gz",
+    "effectiveDate": "20250504",
+    "rowCount": 622401
+  },
+  {
+    "filename": "BEST_EURO_OUT",
+    "relativePath": "BEST_EURO_OUT/best_euro.out.20250504.csv.gz",
+    "effectiveDate": "20250504",
+    "rowCount": 845632
+  },
+  {
+    "filename": "BEST_ASIA_OUT",
+    "relativePath": "BEST_ASIA_OUT/best_asia.out.20250504.csv.gz",
+    "effectiveDate": "20250504",
+    "rowCount": 723450
+  },
+  {
+    "filename": "BEST_AFRICA_OUT",
+    "relativePath": "BEST_AFRICA_OUT/best_africa.out.20250504.csv.gz",
+    "effectiveDate": "20250504",
+    "rowCount": 321789
+  },
+  {
+    "filename": "BEST_OCEANIA_OUT",
+    "relativePath": "BEST_OCEANIA_OUT/best_oceania.out.20250504.csv.gz",
+    "effectiveDate": "20250504",
+    "rowCount": 125678
+  }
+]
