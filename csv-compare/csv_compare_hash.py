@@ -306,8 +306,8 @@ def main():
     parser.add_argument("primary_key", help="Column name to use as the primary key")
     parser.add_argument("--output-dir", default="comparison_results", 
                         help="Directory to save output files (default: comparison_results)")
-    parser.add_argument("--ignore-columns", nargs='+', default=[],
-                        help="Columns to ignore when comparing rows")
+    parser.add_argument("--ignore-columns", 
+                        help="Columns to ignore when comparing rows (comma-separated or space-separated)")
     parser.add_argument("--columns-to-hash", nargs='+', default=None,
                         help="Only include these columns when comparing (default: all except ignored)")
     parser.add_argument("--keys-only", action="store_true", 
@@ -318,6 +318,16 @@ def main():
     # Set up logging
     logger = setup_logging()
     
+    # Parse ignore_columns - handle both comma-separated and space-separated values
+    ignore_columns = []
+    if args.ignore_columns:
+        # First try splitting by comma
+        if ',' in args.ignore_columns:
+            ignore_columns = [col.strip() for col in args.ignore_columns.split(',')]
+        else:
+            # If no commas, treat as space-separated
+            ignore_columns = args.ignore_columns.split()
+    
     try:
         compare_csvs(
             args.old_file, 
@@ -325,7 +335,7 @@ def main():
             args.primary_key,
             args.output_dir,
             args.columns_to_hash,
-            args.ignore_columns,
+            ignore_columns,
             not args.keys_only
         )
     except Exception as e:

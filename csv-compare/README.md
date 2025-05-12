@@ -1,155 +1,89 @@
 # CSV Compare Tool
 
-A high-performance tool for comparing CSV files and generating delta reports. The tool efficiently identifies new rows and changes between two CSV files using a specified primary key for row matching.
+A high-performance tool for comparing large CSV files and identifying differences. Supports both regular CSV files and compressed files (.gz, .zip).
 
 ## Features
 
-- Fast parallel processing of large CSV files
-- Support for both plain CSV and gzipped CSV files
-- Flexible primary key-based row matching
-- Detailed change tracking with JSON output
-- Configurable column ignoring
-- CPU and memory profiling support
-- Auto-detect latest CSV files in a directory
-- Summary statistics of changes
+- Fast comparison of large CSV files
+- Support for compressed files (.gz, .zip)
+- Configurable column comparison
+- Detailed output of changes
+- Progress reporting
+- Memory-efficient processing
 
 ## Installation
 
-```bash
-go install github.com/yourusername/csv-compare@latest
-```
+No installation required. Just make sure you have Python 3.6+ installed.
 
 ## Usage
 
+Basic usage:
 ```bash
-csv-compare [flags]
+python csv_compare_hash.py old_file.csv new_file.csv primary_key_column
 ```
 
-### Required Flags
+### Command Line Arguments
 
-- `--primary-key`: Column name to use as primary key for matching rows (required)
+- `old_file`: Path to the old CSV file (required)
+- `new_file`: Path to the new CSV file (required)
+- `primary_key`: Column name to use as the primary key (required)
+- `--output-dir`: Directory to save output files (default: "comparison_results")
+- `--ignore-columns`: Columns to ignore when comparing rows (comma-separated or space-separated)
+- `--columns-to-hash`: Only include these columns when comparing (space-separated)
+- `--keys-only`: Only store keys in output files, not full rows (saves memory)
 
-### Optional Flags
+### Examples
 
-- `--prev`: Specific previous CSV file to use (instead of auto-detecting)
-- `--curr`: Specific current CSV file to use (instead of auto-detecting)
-- `--dir`: Directory path containing CSV files (.csv or .csv.gz) (default: ".")
-- `--delta`: Path for the delta CSV output (default: delta_TIMESTAMP.csv)
-- `--log`: Path for the changes log JSON output (default: changes_TIMESTAMP.json)
-- `--parallel`: Use parallel processing for better performance (default: true)
-- `--chunk-size`: Chunk size for parallel processing (default: 1000)
-- `--ignore-columns`: Comma-separated list of column names to ignore when determining differences
-- `--cpuprofile`: Write CPU profile to file
-- `--memprofile`: Write memory profile to file
-
-## How It Works
-
-The tool compares two CSV files using the following logic:
-
-1. **New Rows**: Rows with primary keys that only exist in the current file are considered new and included in the delta output.
-2. **Changed Rows**: Rows with the same primary key but different values (excluding ignored columns) are included in both the delta output and changes log.
-3. **Identical Rows**: Rows with the same primary key and values are ignored.
-4. **Removed Rows**: Rows with primary keys that only exist in the previous file are ignored.
-
-## Output
-
-### Summary Statistics
-
-At the end of processing, the tool displays a summary showing:
-- Total number of rows in the current file
-- Number of rows in the delta file (new + changed rows)
-- List of all columns that had differences
-
-Example output:
-```
-Summary:
-Current file row count: 1000
-Delta file row count: 150
-Columns with differences:
-  - name
-  - email
-  - status
-```
-
-### Delta CSV
-
-The delta CSV file contains:
-- All new rows from the current file
-- All changed rows from the current file
-- Headers from the original files
-
-### Changes Log (JSON)
-
-The changes log contains detailed information about changed rows:
-- Row index
-- Column name
-- Previous value
-- Current value
-
-Example JSON output:
-```json
-[
-  {
-    "row_index": 42,
-    "changes": {
-      "name": {
-        "column": "name",
-        "previous_value": "John Doe",
-        "current_value": "John Smith"
-      },
-      "email": {
-        "column": "email",
-        "previous_value": "john@example.com",
-        "current_value": "john.smith@example.com"
-      }
-    }
-  }
-]
-```
-
-## Examples
-
-### Basic Usage
-
+1. Basic comparison:
 ```bash
-# Compare two specific files using 'id' as the primary key
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv
+python csv_compare_hash.py old_data.csv new_data.csv id
 ```
 
-### Auto-detect Latest Files
-
+2. Compare compressed files:
 ```bash
-# Compare the two most recent CSV files in a directory
-csv-compare --primary-key "id" --dir /path/to/csv/files
+python csv_compare_hash.py old_data.csv.gz new_data.zip id
 ```
 
-### Ignore Specific Columns
-
+3. Ignore specific columns (comma-separated):
 ```bash
-# Compare files while ignoring 'last_modified' and 'updated_at' columns
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv --ignore-columns "last_modified,updated_at"
+python csv_compare_hash.py old_data.csv new_data.csv id --ignore-columns "timestamp,updated_at,created_at"
 ```
 
-### Performance Tuning
-
+4. Ignore specific columns (space-separated):
 ```bash
-# Use a larger chunk size for better performance with large files
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv --chunk-size 5000
+python csv_compare_hash.py old_data.csv new_data.csv id --ignore-columns timestamp updated_at created_at
 ```
 
-### Profiling
-
+5. Only compare specific columns:
 ```bash
-# Generate CPU and memory profiles
-csv-compare --primary-key "id" --prev previous.csv --curr current.csv --cpuprofile cpu.prof --memprofile mem.prof
+python csv_compare_hash.py old_data.csv new_data.csv id --columns-to-hash name email phone
 ```
 
-## Performance Considerations
+6. Save only keys in output files:
+```bash
+python csv_compare_hash.py old_data.csv new_data.csv id --keys-only
+```
 
-- The tool uses parallel processing by default for better performance
-- Adjust the chunk size based on your file sizes and available memory
-- For very large files, consider using gzipped CSV files to reduce I/O
-- Use the profiling flags to identify performance bottlenecks
+7. Specify custom output directory:
+```bash
+python csv_compare_hash.py old_data.csv new_data.csv id --output-dir my_comparison_results
+```
+
+### Output Files
+
+The tool generates the following files in the output directory:
+
+- `modified_records.csv`: Records that have changed
+- `new_records.csv`: Records that exist only in the new file
+- `deleted_records.csv`: Records that exist only in the old file
+- `comparison_summary.txt`: Summary of the comparison results
+
+### Notes
+
+- The primary key column is automatically ignored when computing row hashes
+- When using `--ignore-columns`, you can specify columns either comma-separated or space-separated
+- The tool automatically handles compressed files (.gz, .zip)
+- For very large files, consider using the `--keys-only` option to reduce memory usage
 
 ## License
 
