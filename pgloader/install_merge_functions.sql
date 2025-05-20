@@ -13,6 +13,18 @@ CREATE OR REPLACE FUNCTION merge_jsonb_from_temp(
 DECLARE
     v_sql TEXT;
     v_exclude_columns TEXT[];
+    v_reserved_keywords TEXT[] := ARRAY[
+        'rownumber', 'order', 'group', 'user', 'table', 'column',
+        'select', 'from', 'where', 'update', 'delete', 'insert',
+        'create', 'drop', 'alter', 'index', 'view', 'sequence',
+        'trigger', 'function', 'procedure', 'schema', 'database',
+        'constraint', 'primary', 'foreign', 'key', 'unique',
+        'check', 'default', 'null', 'not', 'and', 'or', 'as',
+        'on', 'in', 'exists', 'between', 'like', 'ilike', 'is',
+        'all', 'any', 'some', 'distinct', 'having', 'limit',
+        'offset', 'union', 'intersect', 'except', 'case', 'when',
+        'then', 'else', 'end', 'true', 'false', 'unknown'
+    ];
 BEGIN
     -- Set default excluded columns if not provided
     v_exclude_columns := COALESCE(p_exclude_columns, '{}'::TEXT[]);
@@ -25,7 +37,10 @@ BEGIN
                 %1$I,
                 (
                     SELECT jsonb_object_agg(
-                        lower(key),
+                        CASE 
+                            WHEN key = ANY(%2$L) THEN key
+                            ELSE lower(key)
+                        END,
                         CASE 
                             WHEN value = '' THEN NULL
                             WHEN value ~ '^[0-9]+(\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
@@ -36,19 +51,19 @@ BEGIN
                         END
                     )
                     FROM jsonb_each_text(
-                        (SELECT to_jsonb(t) - %2$L::text[] FROM (SELECT * FROM %3$I LIMIT 1) t)
+                        (SELECT to_jsonb(t) - %3$L::text[] FROM (SELECT * FROM %4$I LIMIT 1) t)
                     )
-                    WHERE key <> ALL(%2$L)
+                    WHERE key <> ALL(%3$L)
                 ) as new_data
-            FROM %3$I
+            FROM %4$I
         )
-        UPDATE %4$I t
-        SET %5$I = COALESCE(t.%5$I, '{}'::jsonb) || sd.new_data
+        UPDATE %5$I t
+        SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
         FROM source_data sd
         WHERE t.%1$I = sd.%1$I
         AND sd.new_data IS NOT NULL;
     $sql$,
-    p_id_column, v_exclude_columns, p_temp_table, p_target_table, p_target_jsonb_column
+    p_id_column, v_reserved_keywords, v_exclude_columns, p_temp_table, p_target_table, p_target_jsonb_column
     );
     
     -- Execute the dynamic SQL
@@ -73,6 +88,18 @@ CREATE OR REPLACE FUNCTION get_merge_jsonb_sql(
 DECLARE
     v_sql TEXT;
     v_exclude_columns TEXT[];
+    v_reserved_keywords TEXT[] := ARRAY[
+        'rownumber', 'order', 'group', 'user', 'table', 'column',
+        'select', 'from', 'where', 'update', 'delete', 'insert',
+        'create', 'drop', 'alter', 'index', 'view', 'sequence',
+        'trigger', 'function', 'procedure', 'schema', 'database',
+        'constraint', 'primary', 'foreign', 'key', 'unique',
+        'check', 'default', 'null', 'not', 'and', 'or', 'as',
+        'on', 'in', 'exists', 'between', 'like', 'ilike', 'is',
+        'all', 'any', 'some', 'distinct', 'having', 'limit',
+        'offset', 'union', 'intersect', 'except', 'case', 'when',
+        'then', 'else', 'end', 'true', 'false', 'unknown'
+    ];
 BEGIN
     v_exclude_columns := COALESCE(p_exclude_columns, '{}'::TEXT[]);
     v_exclude_columns := array_append(v_exclude_columns, p_id_column);
@@ -84,7 +111,10 @@ BEGIN
                 %1$I,
                 (
                     SELECT jsonb_object_agg(
-                        lower(key),
+                        CASE 
+                            WHEN key = ANY(%2$L) THEN key
+                            ELSE lower(key)
+                        END,
                         CASE 
                             WHEN value = '' THEN NULL
                             WHEN value ~ '^[0-9]+(\\\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
@@ -95,19 +125,19 @@ BEGIN
                         END
                     )
                     FROM jsonb_each_text(
-                        (SELECT to_jsonb(t) - %2$L::text[] FROM (SELECT * FROM %3$I LIMIT 1) t)
+                        (SELECT to_jsonb(t) - %3$L::text[] FROM (SELECT * FROM %4$I LIMIT 1) t)
                     )
-                    WHERE key <> ALL(%2$L)
+                    WHERE key <> ALL(%3$L)
                 ) as new_data
-            FROM %3$I
+            FROM %4$I
         )
-        UPDATE %4$I t
-        SET %5$I = COALESCE(t.%5$I, '{}'::jsonb) || sd.new_data
+        UPDATE %5$I t
+        SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
         FROM source_data sd
         WHERE t.%1$I = sd.%1$I
         AND sd.new_data IS NOT NULL;
     $sql$,
-    p_id_column, v_exclude_columns, p_temp_table, p_target_table, p_target_jsonb_column
+    p_id_column, v_reserved_keywords, v_exclude_columns, p_temp_table, p_target_table, p_target_jsonb_column
     );
     
     RETURN v_sql;
