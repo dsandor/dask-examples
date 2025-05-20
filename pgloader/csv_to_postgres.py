@@ -113,7 +113,8 @@ def process_csv_file(
     file_path: str,
     table_name: str,
     limit: Optional[int] = None,
-    debug: bool = False
+    debug: bool = False,
+    keep_temp: bool = False
 ) -> int:
     # Generate a unique temporary table name for this import
     temp_table = f"temp_csv_import_{int(time.time())}"
@@ -385,14 +386,18 @@ def process_csv_file(
                     processing_time = time.time() - start_time
                     print(f"  - Processed {rows_processed:,} rows in {processing_time:.2f} seconds")
                     
-                    # Clean up the temporary table
-                    try:
-                        with conn.cursor() as cleanup_cur:
-                            cleanup_cur.execute(f"DROP TABLE IF EXISTS {temp_table} CASCADE")
-                            conn.commit()
-                    except Exception as e:
-                        print(f"  - Warning: Could not drop temporary table: {e}")
-                        conn.rollback()
+                    # Clean up the temporary table if not keeping it
+                    if not keep_temp:
+                        try:
+                            with conn.cursor() as cleanup_cur:
+                                cleanup_cur.execute(f"DROP TABLE IF EXISTS {temp_table} CASCADE")
+                                conn.commit()
+                                print(f"  - Dropped temporary table {temp_table}")
+                        except Exception as e:
+                            print(f"  - Warning: Could not drop temporary table: {e}")
+                            conn.rollback()
+                    else:
+                        print(f"  - Kept temporary table {temp_table} as requested")
                     
                     # Debug output for specific IDs
                     if debug:
@@ -414,7 +419,7 @@ def process_csv_file(
                             except Exception as e:
                                 print(f"  - Error fetching debug data for {debug_id}: {e}")
                     
-                    return updated_count
+                    return rows_processed
                 
             elapsed = time.time() - start_time
             print(f"Completed processing {rows_processed:,} rows from {file_path} in {elapsed:.2f} seconds")
@@ -472,6 +477,9 @@ Examples:
   
   # With debug output
   python csv_to_postgres.py "data/*.csv" --debug
+  
+  # Keep temporary tables after loading
+  python csv_to_postgres.py "data/*.csv" --keep-temp
 """)
     parser.add_argument(
         "csv_files", 
@@ -486,6 +494,7 @@ Examples:
     parser.add_argument("--table", default="csv_data", help="Table name to load data into (default: csv_data)")
     parser.add_argument("--limit", type=int, help="Limit the number of rows to process per file")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--keep-temp", action="store_true", help="Keep temporary tables after loading")
     
     if len(sys.argv) == 1 or "--help" in sys.argv:
         print(__doc__)
@@ -522,7 +531,7 @@ Examples:
         for i, file_path in enumerate(file_paths, 1):
             print(f"\nProcessing file {i} of {len(file_paths)}: {file_path}")
             try:
-                rows = process_csv_file(conn, file_path, args.table, args.limit, args.debug)
+                rows = process_csv_file(conn, file_path, args.table, args.limit, args.debug, args.keep_temp)
                 total_rows += rows
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
