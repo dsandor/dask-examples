@@ -108,31 +108,40 @@ def create_temp_table(conn, columns: List[str]) -> str:
     return temp_table
 
 
-def process_csv_file(
-    conn,
-    file_path: str,
-    table_name: str,
-    limit: Optional[int] = None,
-    debug: bool = False,
-    keep_temp: bool = False
-) -> int:
+def process_csv_file(csv_file, conn, keep_temp=False):
+    """Process a single CSV file and load it into PostgreSQL."""
     try:
         # Generate a unique table name
         temp_table_name = f"temp_csv_import_{int(time.time())}"
         
-        # Read CSV header to get column names
-        with open(file_path, 'r', encoding='utf-8') as f:
+        # Read CSV to determine column count and names
+        with open(csv_file, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             header = next(reader)
-            # Count the actual number of columns in the first data row
-            first_row = next(reader)
-            num_columns = len(first_row)
+            
+            # Read first few rows to determine max columns
+            max_columns = len(header)
+            sample_rows = []
+            for _ in range(5):  # Read up to 5 rows to determine max columns
+                try:
+                    row = next(reader)
+                    max_columns = max(max_columns, len(row))
+                    sample_rows.append(row)
+                except StopIteration:
+                    break
+            
+            # If we have more columns than header, extend header with generic names
+            if max_columns > len(header):
+                print(f"  - Warning: CSV has {max_columns} columns but header only has {len(header)} columns")
+                print(f"  - Extending header with generic column names")
+                header.extend([f'column_{i+1}' for i in range(len(header), max_columns)])
+            
             # Reset file pointer to start
             f.seek(0)
             next(reader)  # Skip header again
         
-        # Filter out 'rownumber' from columns and ensure we have all columns
-        columns = [f'"{col}" text' for col in header if col.lower() != 'rownumber']
+        # Create columns list including rownumber but quoting it
+        columns = [f'"{col}" text' for col in header]
         
         # Create temporary table with all columns as text
         create_table_sql = f"""
@@ -156,11 +165,11 @@ def process_csv_file(
                 print(f"  - {col_name}: {data_type}")
             
             # Copy CSV to import directory
-            import_filename = f"import_{int(time.time())}_{os.path.basename(file_path)}"
+            import_filename = f"import_{int(time.time())}_{os.path.basename(csv_file)}"
             import_path = os.path.join('import', import_filename)
             os.makedirs('import', exist_ok=True)
-            shutil.copy2(file_path, import_path)
-            print(f"  - Copying {file_path} to import directory as {import_filename}")
+            shutil.copy2(csv_file, import_path)
+            print(f"  - Copying {csv_file} to import directory as {import_filename}")
             
             # Use COPY command for bulk loading with proper CSV format options
             copy_sql = f"""
@@ -190,7 +199,7 @@ def process_csv_file(
                     'id_bb_global',  -- ID column name
                     'csv_data',  -- target table name
                     'data',  -- JSONB column in target table
-                    ARRAY['created_at', 'updated_at', 'filedate']  -- columns to exclude
+                    ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
                 );
             """, (temp_table_name,))
             merge_sql = cur.fetchone()[0]
@@ -204,7 +213,7 @@ def process_csv_file(
                     'id_bb_global',  -- ID column name
                     'csv_data',  -- target table name
                     'data',  -- JSONB column in target table
-                    ARRAY['created_at', 'updated_at', 'filedate']  -- columns to exclude
+                    ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
                 );
             """, (temp_table_name,))
             
@@ -213,7 +222,7 @@ def process_csv_file(
             
     except Exception as e:
         conn.rollback()
-        raise Exception(f"Error processing {file_path}: {str(e)}")
+        raise Exception(f"Error processing {csv_file}: {str(e)}")
 
 
 def expand_file_patterns(patterns: Iterable[str]) -> List[str]:
@@ -315,7 +324,7 @@ Examples:
         for i, file_path in enumerate(file_paths, 1):
             print(f"\nProcessing file {i} of {len(file_paths)}: {file_path}")
             try:
-                rows = process_csv_file(conn, file_path, args.table, args.limit, args.debug, args.keep_temp)
+                rows = process_csv_file(file_path, conn, args.keep_temp)
                 total_rows += rows
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
