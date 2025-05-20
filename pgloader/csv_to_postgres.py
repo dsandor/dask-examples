@@ -147,8 +147,26 @@ def process_csv_file(
             
             # Create table (temporary or regular based on keep_temp flag)
             with conn.cursor() as cur:
-                # Convert column names to lowercase and remove quotes
-                columns_sql = ", ".join([f"{col.lower()} TEXT" for col in columns])
+                # List of PostgreSQL reserved keywords that need quoting
+                reserved_keywords = {
+                    'rownumber', 'order', 'group', 'user', 'table', 'column',
+                    'select', 'from', 'where', 'update', 'delete', 'insert',
+                    'create', 'drop', 'alter', 'index', 'view', 'sequence',
+                    'trigger', 'function', 'procedure', 'schema', 'database',
+                    'constraint', 'primary', 'foreign', 'key', 'unique',
+                    'check', 'default', 'null', 'not', 'and', 'or', 'as',
+                    'on', 'in', 'exists', 'between', 'like', 'ilike', 'is',
+                    'all', 'any', 'some', 'distinct', 'having', 'limit',
+                    'offset', 'union', 'intersect', 'except', 'case', 'when',
+                    'then', 'else', 'end', 'true', 'false', 'unknown'
+                }
+                
+                # Convert column names to lowercase and quote if they are reserved keywords
+                columns_sql = ", ".join([
+                    f'"{col.lower()}" TEXT' if col.lower() in reserved_keywords 
+                    else f"{col.lower()} TEXT" 
+                    for col in columns
+                ])
                 
                 if keep_temp:
                     cur.execute(f"""
