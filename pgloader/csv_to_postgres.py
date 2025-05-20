@@ -152,12 +152,21 @@ def process_csv_file(
                 temp_table = f"temp_csv_import_{int(time.time())}"
                 columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
                 
-                # Create temporary table
-                cur.execute(f"""
-                CREATE TEMPORARY TABLE {temp_table} (
-                    {columns_sql}
-                ) ON COMMIT DROP;
-                """)
+                # Create table (temporary or regular based on keep_temp flag)
+                if keep_temp:
+                    cur.execute(f"""
+                    CREATE TABLE {temp_table} (
+                        {columns_sql}
+                    );
+                    """)
+                    print(f"  - Created regular table {temp_table} (will be kept)")
+                else:
+                    cur.execute(f"""
+                    CREATE TEMPORARY TABLE {temp_table} (
+                        {columns_sql}
+                    ) ON COMMIT DROP;
+                    """)
+                    print(f"  - Created temporary table {temp_table} (will be dropped)")
                 
                 # Copy file to import directory for PostgreSQL to access
                 import_filename = f"import_{int(time.time())}_{os.path.basename(file_path)}"
