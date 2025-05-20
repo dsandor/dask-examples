@@ -127,7 +127,6 @@ def process_csv_file(
     with conn.cursor() as cleanup_cur:
         cleanup_cur.execute(f"DROP TABLE IF EXISTS {temp_table} CASCADE")
     conn.commit()
-    conn.autocommit = False
     
     start_time = time.time()
     file_size = os.path.getsize(file_path)
@@ -146,13 +145,10 @@ def process_csv_file(
                 print(f"Error: ID_BB_GLOBAL column not found in {file_path}")
                 return 0
             
-            # Create temporary table and process data in a single transaction
+            # Create table (temporary or regular based on keep_temp flag)
             with conn.cursor() as cur:
-                # Create temporary table with the same structure as CSV
-                temp_table = f"temp_csv_import_{int(time.time())}"
                 columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
                 
-                # Create table (temporary or regular based on keep_temp flag)
                 if keep_temp:
                     cur.execute(f"""
                     CREATE TABLE {temp_table} (
@@ -168,6 +164,17 @@ def process_csv_file(
                     """)
                     print(f"  - Created temporary table {temp_table} (will be dropped)")
                 
+                # Verify table was created
+                cur.execute(f"""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = %s
+                );
+                """, (temp_table,))
+                table_exists = cur.fetchone()[0]
+                if not table_exists:
+                    raise Exception(f"Failed to create table {temp_table}")
+                
                 # Copy file to import directory for PostgreSQL to access
                 import_filename = f"import_{int(time.time())}_{os.path.basename(file_path)}"
                 import_path = os.path.join('import', import_filename)
@@ -182,7 +189,11 @@ def process_csv_file(
                     COPY {temp_table} FROM '/import/{import_filename}' WITH (FORMAT CSV, HEADER, ENCODING 'UTF-8')
                     """)
                     
-                    print(f"  - Bulk loaded data into temporary table {temp_table}")
+                    # Verify data was loaded
+                    cur.execute(f"SELECT COUNT(*) FROM {temp_table}")
+                    row_count = cur.fetchone()[0]
+                    print(f"  - Bulk loaded {row_count:,} rows into {temp_table}")
+                    
                 finally:
                     # Clean up the imported file
                     try:
@@ -383,6 +394,7 @@ def process_csv_file(
                         with conn.cursor() as count_cur:
                             count_cur.execute(f"SELECT COUNT(*) FROM {temp_table}")
                             rows_processed = count_cur.fetchone()[0]
+                            print(f"  - Verified {rows_processed:,} rows in {temp_table}")
                     except Exception as e:
                         print(f"  - Warning: Could not get row count: {e}")
                         rows_processed = updated_count  # Fall back to updated_count
@@ -406,7 +418,20 @@ def process_csv_file(
                             print(f"  - Warning: Could not drop temporary table: {e}")
                             conn.rollback()
                     else:
-                        print(f"  - Kept temporary table {temp_table} as requested")
+                        print(f"  - Kept table {temp_table} as requested")
+                        # Verify table still exists
+                        with conn.cursor() as verify_cur:
+                            verify_cur.execute(f"""
+                            SELECT EXISTS (
+                                SELECT FROM information_schema.tables 
+                                WHERE table_name = %s
+                            );
+                            """, (temp_table,))
+                            still_exists = verify_cur.fetchone()[0]
+                            if still_exists:
+                                print(f"  - Verified table {temp_table} still exists")
+                            else:
+                                print(f"  - WARNING: Table {temp_table} no longer exists!")
                     
                     # Debug output for specific IDs
                     if debug:
