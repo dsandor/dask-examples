@@ -34,6 +34,7 @@ import psycopg2
 from psycopg2.extras import Json
 import time
 from typing import Dict, List, Optional, Any, Iterable
+import shutil
 
 
 def create_table_if_not_exists(conn, table_name: str) -> None:
@@ -111,7 +112,8 @@ def process_csv_file(
     conn,
     file_path: str,
     table_name: str,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
+    debug: bool = False
 ) -> int:
     # Generate a unique temporary table name for this import
     temp_table = f"temp_csv_import_{int(time.time())}"
@@ -125,18 +127,7 @@ def process_csv_file(
         cleanup_cur.execute(f"DROP TABLE IF EXISTS {temp_table} CASCADE")
     conn.commit()
     conn.autocommit = False
-    """
-    Process a CSV file and load it into PostgreSQL using bulk copy with a temporary table.
     
-    Args:
-        conn: PostgreSQL connection
-        file_path: Path to CSV file
-        table_name: Table name to load data into
-        limit: Maximum number of rows to process
-        
-    Returns:
-        Number of rows processed
-    """
     start_time = time.time()
     file_size = os.path.getsize(file_path)
     
@@ -167,16 +158,29 @@ def process_csv_file(
                 ) ON COMMIT DROP;
                 """)
                 
-                # Use COPY command to bulk load data directly into temp table
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    # Skip header row as we're using WITH CSV HEADER
-                    next(f)
-                    cur.copy_expert(
-                        f"COPY {temp_table} FROM STDIN WITH (FORMAT CSV, HEADER, ENCODING 'UTF-8')",
-                        f
-                    )
+                # Copy file to import directory for PostgreSQL to access
+                import_filename = f"import_{int(time.time())}_{os.path.basename(file_path)}"
+                import_path = os.path.join('import', import_filename)
+                print(f"  - Copying {file_path} to import directory as {import_filename}")
+                shutil.copy2(file_path, import_path)
+                print(f"  - File copied successfully to {import_path}")
                 
-                print(f"  - Bulk loaded data into temporary table {temp_table}")
+                try:
+                    # Use COPY command to bulk load data directly into temp table
+                    print(f"  - Executing COPY command from /import/{import_filename}")
+                    cur.execute(f"""
+                    COPY {temp_table} FROM '/import/{import_filename}' WITH (FORMAT CSV, HEADER, ENCODING 'UTF-8')
+                    """)
+                    
+                    print(f"  - Bulk loaded data into temporary table {temp_table}")
+                finally:
+                    # Clean up the imported file
+                    try:
+                        print(f"  - Cleaning up temporary import file: {import_path}")
+                        os.remove(import_path)
+                        print(f"  - Successfully removed temporary import file")
+                    except Exception as e:
+                        print(f"  - Warning: Could not remove temporary import file: {e}")
                 
                 # Get the list of non-ID columns for JSON building
                 non_id_columns = [col for col in columns if col != 'ID_BB_GLOBAL']
@@ -270,7 +274,7 @@ def process_csv_file(
                             # Special debug for the problematic ID
                             is_problematic_id = (id_bb_global == 'LgyMu6dSbEP4')
                             
-                            if is_problematic_id:
+                            if is_problematic_id and debug:
                                 print("\n=== DEBUG: Found problematic ID LgyMu6dSbEP4 ===")
                                 print("Raw row data:", row)
                                 print("Update data prepared:", update_data)
@@ -294,7 +298,7 @@ def process_csv_file(
                                     
                                 current_data = dict(current_row[0] or {})  # Ensure we have a mutable copy
                                 
-                                if is_problematic_id:
+                                if is_problematic_id and debug:
                                     print("\n=== DEBUG: BEFORE MERGE ===")
                                     print("ID:", id_bb_global)
                                     print("Current data in DB:", json.dumps(current_data, indent=4))
@@ -313,7 +317,7 @@ def process_csv_file(
                                 if v is not None and v != '':
                                     merged_data[k] = v
                             
-                            if is_problematic_id:
+                            if is_problematic_id and debug:
                                 print("\n=== DEBUG: AFTER MERGE ===")
                                 print("Merged data:", json.dumps(merged_data, indent=4))
                                 print(f"Fields in current data: {len(current_data)}")
@@ -391,56 +395,26 @@ def process_csv_file(
                         conn.rollback()
                     
                     # Debug output for specific IDs
-                    debug_ids = ['LgyMu6dSbEP4', '9Pt8sJtV2U2b']
-                    for debug_id in debug_ids:
-                        try:
-                            with conn.cursor() as debug_cur:
-                                debug_cur.execute(
-                                    f"""
-                                    SELECT data FROM {table_name}
-                                    WHERE id_bb_global = %s
-                                    """,
-                                    (debug_id,)
-                                )
-                                result = debug_cur.fetchone()
-                                if result:
-                                    print(f"\nDebug - Current data for {debug_id}:")
-                                    print(json.dumps(result[0], indent=4))
-                        except Exception as e:
-                            print(f"  - Error fetching debug data for {debug_id}: {e}")
+                    if debug:
+                        debug_ids = ['LgyMu6dSbEP4', '9Pt8sJtV2U2b']
+                        for debug_id in debug_ids:
+                            try:
+                                with conn.cursor() as debug_cur:
+                                    debug_cur.execute(
+                                        f"""
+                                        SELECT data FROM {table_name}
+                                        WHERE id_bb_global = %s
+                                        """,
+                                        (debug_id,)
+                                    )
+                                    result = debug_cur.fetchone()
+                                    if result:
+                                        print(f"\nDebug - Current data for {debug_id}:")
+                                        print(json.dumps(result[0], indent=4))
+                            except Exception as e:
+                                print(f"  - Error fetching debug data for {debug_id}: {e}")
                     
                     return updated_count
-                    for debug_id in debug_ids:
-                        try:
-                            with conn.cursor() as debug_cur:
-                                debug_cur.execute(
-                                    f"""
-                                    SELECT data FROM {table_name}
-                                    WHERE id_bb_global = %s
-                                    """,
-                                    (debug_id,)
-                                )
-                                result = debug_cur.fetchone()
-                                if result:
-                                    print(f"\nDebug - Current data for {debug_id}:")
-                                    print(json.dumps(result[0], indent=4))
-                        except Exception as e:
-                            print(f"  - Error fetching debug data for {debug_id}: {e}")
-                    
-                    # Debug output for specific IDs
-                    debug_ids = ['LgyMu6dSbEP4', '9Pt8sJtV2U2b']
-                    for debug_id in debug_ids:
-                        update_cur.execute(f"""
-                        SELECT id_bb_global, data 
-                        FROM {table_name} 
-                        WHERE id_bb_global = %s;
-                        """, (debug_id,))
-                        result = update_cur.fetchone()
-                        if result:
-                            print(f"\nDebug - Current data for {debug_id}:")
-                            print(json.dumps(result[1], indent=2))
-                    
-                    return rows_processed
                 
             elapsed = time.time() - start_time
             print(f"Completed processing {rows_processed:,} rows from {file_path} in {elapsed:.2f} seconds")
@@ -495,6 +469,9 @@ Examples:
   
   # With database options
   python csv_to_postgres.py "data/*.csv" --dbname mydb --user myuser
+  
+  # With debug output
+  python csv_to_postgres.py "data/*.csv" --debug
 """)
     parser.add_argument(
         "csv_files", 
@@ -508,6 +485,7 @@ Examples:
     parser.add_argument("--password", default="Password123", help="PostgreSQL password (default: Password123)")
     parser.add_argument("--table", default="csv_data", help="Table name to load data into (default: csv_data)")
     parser.add_argument("--limit", type=int, help="Limit the number of rows to process per file")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
     
     if len(sys.argv) == 1 or "--help" in sys.argv:
         print(__doc__)
@@ -544,7 +522,7 @@ Examples:
         for i, file_path in enumerate(file_paths, 1):
             print(f"\nProcessing file {i} of {len(file_paths)}: {file_path}")
             try:
-                rows = process_csv_file(conn, file_path, args.table, args.limit)
+                rows = process_csv_file(conn, file_path, args.table, args.limit, args.debug)
                 total_rows += rows
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
