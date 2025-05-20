@@ -226,6 +226,23 @@ def process_csv_file(
                     row_count = cur.fetchone()[0]
                     print(f"  - Bulk loaded {row_count:,} rows into {temp_table}")
                     
+                    # Print the generated SQL for the merge function if debug is enabled
+                    if debug:
+                        try:
+                            cur.execute("""
+                                SELECT get_merge_jsonb_sql(
+                                    %s,  -- temp table name
+                                    'id_bb_global',  -- ID column name
+                                    %s,  -- target table name
+                                    'data',  -- JSONB column in target table
+                                    ARRAY['created_at', 'updated_at', 'rownumber', 'filedate']  -- columns to exclude
+                                );
+                            """, (temp_table, table_name))
+                            merge_sql = cur.fetchone()[0]
+                            print("\nGenerated SQL for merge_jsonb_from_temp:\n")
+                            print(merge_sql)
+                        except Exception as e:
+                            print(f"  - Warning: Could not generate merge SQL: {e}")
                 finally:
                     # Clean up the imported file
                     try:
