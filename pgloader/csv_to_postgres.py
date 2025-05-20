@@ -97,7 +97,7 @@ def create_temp_table(conn, columns: List[str]) -> str:
     
     with conn.cursor() as cur:
         # Create temporary table with all columns as TEXT
-        columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
+        columns_sql = ", ".join([f"{col.lower()} TEXT" for col in columns])
         cur.execute(f"""
         CREATE TEMPORARY TABLE {temp_table} (
             {columns_sql}
@@ -147,7 +147,8 @@ def process_csv_file(
             
             # Create table (temporary or regular based on keep_temp flag)
             with conn.cursor() as cur:
-                columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
+                # Convert column names to lowercase and remove quotes
+                columns_sql = ", ".join([f"{col.lower()} TEXT" for col in columns])
                 
                 if keep_temp:
                     cur.execute(f"""
@@ -174,6 +175,19 @@ def process_csv_file(
                 table_exists = cur.fetchone()[0]
                 if not table_exists:
                     raise Exception(f"Failed to create table {temp_table}")
+                
+                # Print table structure for debugging
+                print(f"\nTable structure for {temp_table}:")
+                cur.execute(f"""
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name = %s 
+                ORDER BY ordinal_position;
+                """, (temp_table,))
+                columns = cur.fetchall()
+                for col in columns:
+                    print(f"  - {col[0]}: {col[1]}")
+                print()
                 
                 # Copy file to import directory for PostgreSQL to access
                 import_filename = f"import_{int(time.time())}_{os.path.basename(file_path)}"
