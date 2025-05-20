@@ -38,7 +38,7 @@ BEGIN
                 (
                     SELECT jsonb_object_agg(
                         CASE 
-                            WHEN key = ANY(%2$L) THEN key
+                            WHEN key = ANY(%2$L) THEN '_' || key
                             ELSE lower(key)
                         END,
                         CASE 
@@ -112,7 +112,7 @@ BEGIN
                 (
                     SELECT jsonb_object_agg(
                         CASE 
-                            WHEN key = ANY(%2$L) THEN key
+                            WHEN key = ANY(%2$L) THEN '_' || key
                             ELSE lower(key)
                         END,
                         CASE 

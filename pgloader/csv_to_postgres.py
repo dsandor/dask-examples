@@ -138,7 +138,7 @@ def process_csv_file(
         # First, read the CSV header to get column names
         with open(file_path, 'r', newline='', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile)
-            columns = [col.strip() for col in next(reader)]  # Clean column names
+            columns = [col.strip() for col in next(reader) if col.lower() != 'rownumber']  # Clean column names
             
             # Check if ID_BB_GLOBAL column exists
             if 'ID_BB_GLOBAL' not in columns:
@@ -235,7 +235,7 @@ def process_csv_file(
                                     'id_bb_global',  -- ID column name
                                     %s,  -- target table name
                                     'data',  -- JSONB column in target table
-                                    ARRAY['created_at', 'updated_at', 'rownumber', 'filedate']  -- columns to exclude
+                                    ARRAY['created_at', 'updated_at', 'filedate']  -- columns to exclude
                                 );
                             """, (temp_table, table_name))
                             merge_sql = cur.fetchone()[0]
