@@ -150,6 +150,8 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             ) {'ON COMMIT DROP' if not keep_temp else ''};
         """
         
+        print(f"  - Creating {'temporary' if not keep_temp else 'regular'} table {temp_table_name}")
+        
         with conn.cursor() as cur:
             cur.execute(create_table_sql)
             
@@ -218,6 +220,21 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             """, (temp_table_name,))
             
             conn.commit()
+            
+            # Verify table still exists if keep_temp is True
+            if keep_temp:
+                cur.execute(f"""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = %s
+                );
+                """, (temp_table_name,))
+                still_exists = cur.fetchone()[0]
+                if still_exists:
+                    print(f"  - Verified table {temp_table_name} still exists")
+                else:
+                    print(f"  - WARNING: Table {temp_table_name} no longer exists!")
+            
             return cur.rowcount
             
     except Exception as e:
