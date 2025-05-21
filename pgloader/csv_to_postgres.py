@@ -96,8 +96,8 @@ def create_temp_table(conn, columns: List[str]) -> str:
     temp_table = f"temp_csv_import_{int(time.time())}"
     
     with conn.cursor() as cur:
-        # Create temporary table with all columns as TEXT
-        columns_sql = ", ".join([f"{col.lower()} TEXT" for col in columns])
+        # Create temporary table with all columns as TEXT, preserving case
+        columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
         cur.execute(f"""
         CREATE TEMPORARY TABLE {temp_table} (
             {columns_sql}
@@ -140,7 +140,7 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             f.seek(0)
             next(reader)  # Skip header again
         
-        # Create columns list including rownumber but quoting it
+        # Create columns list preserving case
         columns = [f'"{col}" text' for col in header]
         
         # Create temporary table with all columns as text
@@ -201,7 +201,7 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             cur.execute("""
                 SELECT get_merge_jsonb_sql(
                     %s,  -- temp table name
-                    'id_bb_global',  -- ID column name
+                    'ID_BB_GLOBAL',  -- ID column name (using exact case from CSV)
                     'csv_data',  -- target table name
                     'data',  -- JSONB column in target table
                     ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
@@ -220,7 +220,7 @@ def process_csv_file(csv_file, conn, keep_temp=False):
                 cur.execute("""
                     SELECT merge_jsonb_from_temp(
                         %s,  -- temp table name
-                        'id_bb_global',  -- ID column name
+                        'ID_BB_GLOBAL',  -- ID column name (using exact case from CSV)
                         'csv_data',  -- target table name
                         'data',  -- JSONB column in target table
                         ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
