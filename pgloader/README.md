@@ -77,6 +77,82 @@ pip install psycopg2-binary
 
 ## Usage
 
+### Working with Temporary Tables and Merging Data
+
+This section explains how to load CSV data into temporary PostgreSQL tables and then merge it into the main `csv_data` table.
+
+#### 1. Loading CSV Files into Temporary Tables
+
+Use the `csv_to_temp_tables.py` script to load one or more CSV files into temporary tables:
+
+```bash
+python csv_to_temp_tables.py --host localhost --port 5432 --database csvdata --username postgres --password Password123 /path/to/your/files/*.csv
+```
+
+This script will:
+- Create a temporary table for each CSV file with a name like `temp_[filename]_[random_string]`
+- Preserve the original column names and data types from the CSV
+- Handle large files efficiently
+
+Example with a sample file:
+```bash
+python csv_to_temp_tables.py equity_fake.csv
+```
+
+#### 2. Verifying the Temporary Tables
+
+To see the list of temporary tables created:
+
+```sql
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'pg_temp' 
+AND table_name LIKE 'temp_%';
+```
+
+To view the structure of a temporary table:
+
+```sql
+\d+ pg_temp.temp_equity_fake_abc123  -- Replace with your actual temp table name
+```
+
+#### 3. Merging Data into the Main Table
+
+Use the `merge_jsonb_from_temp` function to merge data from a temporary table into the main `csv_data` table:
+
+```sql
+SELECT public.merge_jsonb_from_temp(
+    'temp_equity_fake_abc123',  -- Replace with your temp table name
+    'ID_BB_GLOBAL',             -- ID column name (case-sensitive)
+    'csv_data',                 -- Target table
+    'data',                     -- JSONB column in target table
+    ARRAY['created_at', 'updated_at']  -- Columns to exclude from merge
+);
+```
+
+#### 4. Verifying the Merge
+
+Check the merged data:
+
+```sql
+-- View a sample of merged records
+SELECT id_bb_global, jsonb_pretty(data) 
+FROM csv_data 
+WHERE id_bb_global IN (
+    SELECT "ID_BB_GLOBAL" 
+    FROM pg_temp.temp_equity_fake_abc123  -- Replace with your temp table name
+    LIMIT 5
+);
+
+-- Count merged records
+SELECT COUNT(*) 
+FROM csv_data 
+WHERE id_bb_global IN (
+    SELECT "ID_BB_GLOBAL" 
+    FROM pg_temp.temp_equity_fake_abc123  -- Replace with your temp table name
+);
+```
+
 ### Starting PostgreSQL with Docker
 
 ```bash
@@ -94,9 +170,9 @@ This will start a PostgreSQL server with:
 - Port: 5432
 - Data stored in ./data directory
 
-### Loading CSV Files into PostgreSQL
+### Bulk Loading CSV Files Directly (Alternative Approach)
 
-The loader supports wildcard patterns for loading multiple files at once, making it easy to process entire directories of files.
+For bulk loading data directly without using temporary tables, you can use the following approach:
 
 #### Basic Usage
 

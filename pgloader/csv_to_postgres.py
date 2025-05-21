@@ -34,6 +34,7 @@ import psycopg2
 from psycopg2.extras import Json
 import time
 from typing import Dict, List, Optional, Any, Iterable
+import shutil
 
 
 def create_table_if_not_exists(conn, table_name: str) -> None:
@@ -81,127 +82,185 @@ def create_table_if_not_exists(conn, table_name: str) -> None:
         conn.commit()
 
 
-def process_csv_file(
-    conn,
-    file_path: str,
-    table_name: str,
-    limit: Optional[int] = None
-) -> int:
+def create_temp_table(conn, columns: List[str]) -> str:
     """
-    Process a CSV file and load it into PostgreSQL.
+    Create a temporary table with the same structure as the CSV file.
     
     Args:
-        conn: PostgreSQL connection
-        file_path: Path to CSV file
-        table_name: Table name to load data into
-        limit: Maximum number of rows to process
+        conn: Database connection
+        columns: List of column names from the CSV
         
     Returns:
-        Number of rows processed
+        Name of the temporary table
     """
-    start_time = time.time()
-    file_size = os.path.getsize(file_path)
-    rows_processed = 0
+    temp_table = f"temp_csv_import_{int(time.time())}"
     
-    print(f"Processing file: {file_path}")
-    print(f"File size: {file_size / (1024 * 1024):.2f} MB")
+    with conn.cursor() as cur:
+        # Create temporary table with all columns as TEXT, preserving case
+        columns_sql = ", ".join([f'"{col}" TEXT' for col in columns])
+        cur.execute(f"""
+        CREATE TEMPORARY TABLE {temp_table} (
+            {columns_sql}
+        ) ON COMMIT DROP;
+        """)
+        conn.commit()
     
+    return temp_table
+
+
+def process_csv_file(csv_file, conn, keep_temp=False):
+    """Process a single CSV file and load it into PostgreSQL."""
     try:
-        with open(file_path, 'r', newline='') as csvfile:
-            reader = csv.DictReader(csvfile)
+        # Generate a unique table name
+        temp_table_name = f"temp_csv_import_{int(time.time())}"
+        
+        # Read CSV to determine column count and names
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            header = next(reader)
             
-            # Check if ID_BB_GLOBAL column exists
-            if 'ID_BB_GLOBAL' not in reader.fieldnames:
-                print(f"Error: ID_BB_GLOBAL column not found in {file_path}")
-                return 0
-            
-            batch_size = 1000
-            batch = []
-            
-            for row in reader:
-                # Extract ID_BB_GLOBAL and create JSON object from all columns
-                id_bb_global = row.get('ID_BB_GLOBAL')
-                if not id_bb_global:
-                    continue  # Skip rows without ID_BB_GLOBAL
-                
-                # Add row to batch
-                batch.append((id_bb_global, row))
-                
-                # Process batch if it reaches batch_size
-                if len(batch) >= batch_size:
-                    insert_batch(conn, table_name, batch)
-                    rows_processed += len(batch)
-                    batch = []
-                    
-                    # Print progress
-                    if rows_processed % 10000 == 0:
-                        elapsed = time.time() - start_time
-                        print(f"Processed {rows_processed:,} rows ({elapsed:.2f} seconds)")
-                
-                # Stop if limit is reached
-                if limit is not None and rows_processed >= limit:
+            # Read first few rows to determine max columns
+            max_columns = len(header)
+            sample_rows = []
+            for _ in range(5):  # Read up to 5 rows to determine max columns
+                try:
+                    row = next(reader)
+                    max_columns = max(max_columns, len(row))
+                    sample_rows.append(row)
+                except StopIteration:
                     break
             
-            # Process remaining batch
-            if batch:
-                insert_batch(conn, table_name, batch)
-                rows_processed += len(batch)
+            # If we have more columns than header, extend header with generic names
+            if max_columns > len(header):
+                print(f"  - Warning: CSV has {max_columns} columns but header only has {len(header)} columns")
+                print(f"  - Extending header with generic column names")
+                header.extend([f'column_{i+1}' for i in range(len(header), max_columns)])
             
-            elapsed = time.time() - start_time
-            print(f"Completed processing {rows_processed:,} rows from {file_path} in {elapsed:.2f} seconds")
+            # Reset file pointer to start
+            f.seek(0)
+            next(reader)  # Skip header again
+        
+        # Create columns list preserving case
+        columns = [f'"{col}" text' for col in header]
+        
+        # Create temporary table with all columns as text
+        create_table_sql = f"""
+            CREATE {'TEMPORARY' if not keep_temp else ''} TABLE {temp_table_name} (
+                {', '.join(columns)}
+            ) {'ON COMMIT DROP' if not keep_temp else ''};
+        """
+        
+        print(f"  - Creating {'temporary' if not keep_temp else 'regular'} table {temp_table_name}")
+        
+        # Close any existing transaction
+        if not conn.autocommit:
+            conn.rollback()
+        
+        # Set autocommit for table creation and data loading
+        conn.autocommit = True
+        
+        with conn.cursor() as cur:
+            cur.execute(create_table_sql)
             
-            return rows_processed
+            # Print table structure for debugging
+            print(f"\nTable structure for {temp_table_name}:")
+            cur.execute(f"""
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_name = '{temp_table_name}'
+                ORDER BY ordinal_position;
+            """)
+            for col_name, data_type in cur.fetchall():
+                print(f"  - {col_name}: {data_type}")
+            
+            # Copy CSV to import directory
+            import_filename = f"import_{int(time.time())}_{os.path.basename(csv_file)}"
+            import_path = os.path.join('import', import_filename)
+            os.makedirs('import', exist_ok=True)
+            shutil.copy2(csv_file, import_path)
+            print(f"  - Copying {csv_file} to import directory as {import_filename}")
+            
+            # Use COPY command for bulk loading with proper CSV format options
+            copy_sql = f"""
+                COPY {temp_table_name} FROM '/import/{import_filename}' 
+                WITH (
+                    FORMAT csv,
+                    HEADER true,
+                    DELIMITER ',',
+                    QUOTE '"',
+                    ESCAPE '"',
+                    NULL ''
+                );
+            """
+            print(f"  - Executing COPY command from /import/{import_filename}")
+            cur.execute(copy_sql)
+            print(f"  - Bulk loaded {cur.rowcount} rows into {temp_table_name}")
+            
+            # Clean up the temporary import file
+            print(f"  - Cleaning up temporary import file: {import_path}")
+            os.remove(import_path)
+            print(f"  - Successfully removed temporary import file")
+            
+            # Get the merge SQL for debugging
+            cur.execute("""
+                SELECT get_merge_jsonb_sql(
+                    %s,  -- temp table name
+                    'ID_BB_GLOBAL',  -- ID column name (using exact case from CSV)
+                    'csv_data',  -- target table name
+                    'data',  -- JSONB column in target table
+                    ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
+                );
+            """, (temp_table_name,))
+            merge_sql = cur.fetchone()[0]
+            print("\nGenerated merge SQL:")
+            print(merge_sql)
+            
+            # Disable autocommit for the merge operation
+            conn.autocommit = False
+            
+            try:
+                # Execute the merge in a transaction
+                print("  - Starting merge transaction...")
+                cur.execute("""
+                    SELECT merge_jsonb_from_temp(
+                        %s,  -- temp table name
+                        'ID_BB_GLOBAL',  -- ID column name (using exact case from CSV)
+                        'csv_data',  -- target table name
+                        'data',  -- JSONB column in target table
+                        ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
+                    );
+                """, (temp_table_name,))
+                
+                # Commit the merge transaction
+                conn.commit()
+                print("  - Merge transaction committed successfully")
+                
+            except Exception as e:
+                print(f"  - Error during merge: {str(e)}")
+                print("  - Rolling back merge transaction but keeping temp table")
+                conn.rollback()
+                raise Exception(f"Error during merge: {str(e)}")
+            
+            # Verify table still exists if keep_temp is True
+            if keep_temp:
+                cur.execute(f"""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = %s
+                );
+                """, (temp_table_name,))
+                still_exists = cur.fetchone()[0]
+                if still_exists:
+                    print(f"  - Verified table {temp_table_name} still exists")
+                else:
+                    print(f"  - WARNING: Table {temp_table_name} no longer exists!")
+            
+            return cur.rowcount
             
     except Exception as e:
-        print(f"Error processing {file_path}: {str(e)}")
-        return 0
-
-
-def insert_batch(conn, table_name: str, batch: List[tuple]) -> None:
-    """
-    Insert or merge a batch of rows into the database.
-    
-    Args:
-        conn: PostgreSQL connection
-        table_name: Table name to insert into
-        batch: List of (id_bb_global, row_data) tuples
-    """
-    with conn.cursor() as cur:
-        # First, insert or update each row with the new data
-        for id_bb_global, row_data in batch:
-            # Remove ID_BB_GLOBAL from row_data as it's already the primary key
-            row_data = {k: v for k, v in row_data.items() if k != 'ID_BB_GLOBAL'}
-            
-            # Convert the row data to a JSON string for the SQL query
-            row_json = json.dumps(row_data)
-            
-            # First, insert or update the record with the new data
-            # If the record exists, we'll merge the data in the next step
-            cur.execute(f"""
-            INSERT INTO {table_name} (id_bb_global, data)
-            VALUES (%s, %s::jsonb)
-            ON CONFLICT (id_bb_global) 
-            DO UPDATE SET data = {table_name}.data || EXCLUDED.data
-            RETURNING id_bb_global, data;
-            """, (id_bb_global, row_json))
-            
-            # Now, update the record by merging the existing data with the new data
-            # This ensures that only the fields that exist in the new data are updated
-            # and all other fields remain unchanged
-            for key, value in row_data.items():
-                if value is not None:  # Only update non-NULL values
-                    cur.execute(f"""
-                    UPDATE {table_name}
-                    SET data = jsonb_set(
-                        COALESCE(data, '{{}}'::jsonb),
-                        '{{{key}}}',
-                        %s::jsonb,
-                        true
-                    )
-                    WHERE id_bb_global = %s;
-                    """, (json.dumps(value), id_bb_global))
-        
-        conn.commit()
+        if not conn.autocommit:
+            conn.rollback()
+        raise Exception(f"Error processing {csv_file}: {str(e)}")
 
 
 def expand_file_patterns(patterns: Iterable[str]) -> List[str]:
@@ -246,6 +305,12 @@ Examples:
   
   # With database options
   python csv_to_postgres.py "data/*.csv" --dbname mydb --user myuser
+  
+  # With debug output
+  python csv_to_postgres.py "data/*.csv" --debug
+  
+  # Keep temporary tables after loading
+  python csv_to_postgres.py "data/*.csv" --keep-temp
 """)
     parser.add_argument(
         "csv_files", 
@@ -259,6 +324,8 @@ Examples:
     parser.add_argument("--password", default="Password123", help="PostgreSQL password (default: Password123)")
     parser.add_argument("--table", default="csv_data", help="Table name to load data into (default: csv_data)")
     parser.add_argument("--limit", type=int, help="Limit the number of rows to process per file")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--keep-temp", action="store_true", help="Keep temporary tables after loading")
     
     if len(sys.argv) == 1 or "--help" in sys.argv:
         print(__doc__)
@@ -295,7 +362,7 @@ Examples:
         for i, file_path in enumerate(file_paths, 1):
             print(f"\nProcessing file {i} of {len(file_paths)}: {file_path}")
             try:
-                rows = process_csv_file(conn, file_path, args.table, args.limit)
+                rows = process_csv_file(file_path, conn, args.keep_temp)
                 total_rows += rows
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
