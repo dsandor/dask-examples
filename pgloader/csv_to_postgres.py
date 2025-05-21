@@ -152,6 +152,9 @@ def process_csv_file(csv_file, conn, keep_temp=False):
         
         print(f"  - Creating {'temporary' if not keep_temp else 'regular'} table {temp_table_name}")
         
+        # Enable autocommit for table creation and data loading
+        conn.autocommit = True
+        
         with conn.cursor() as cur:
             cur.execute(create_table_sql)
             
@@ -208,18 +211,31 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             print("\nGenerated merge SQL:")
             print(merge_sql)
             
-            # Execute the merge
-            cur.execute("""
-                SELECT merge_jsonb_from_temp(
-                    %s,  -- temp table name
-                    'id_bb_global',  -- ID column name
-                    'csv_data',  -- target table name
-                    'data',  -- JSONB column in target table
-                    ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
-                );
-            """, (temp_table_name,))
+            # Disable autocommit for the merge operation
+            conn.autocommit = False
             
-            conn.commit()
+            try:
+                # Execute the merge in a transaction
+                print("  - Starting merge transaction...")
+                cur.execute("""
+                    SELECT merge_jsonb_from_temp(
+                        %s,  -- temp table name
+                        'id_bb_global',  -- ID column name
+                        'csv_data',  -- target table name
+                        'data',  -- JSONB column in target table
+                        ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
+                    );
+                """, (temp_table_name,))
+                
+                # Commit the merge transaction
+                conn.commit()
+                print("  - Merge transaction committed successfully")
+                
+            except Exception as e:
+                print(f"  - Error during merge: {str(e)}")
+                print("  - Rolling back merge transaction but keeping temp table")
+                conn.rollback()
+                raise Exception(f"Error during merge: {str(e)}")
             
             # Verify table still exists if keep_temp is True
             if keep_temp:
@@ -238,7 +254,8 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             return cur.rowcount
             
     except Exception as e:
-        conn.rollback()
+        if not conn.autocommit:
+            conn.rollback()
         raise Exception(f"Error processing {csv_file}: {str(e)}")
 
 
