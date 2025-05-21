@@ -152,7 +152,11 @@ def process_csv_file(csv_file, conn, keep_temp=False):
         
         print(f"  - Creating {'temporary' if not keep_temp else 'regular'} table {temp_table_name}")
         
-        # Enable autocommit for table creation and data loading
+        # Close any existing transaction
+        if not conn.autocommit:
+            conn.rollback()
+        
+        # Set autocommit for table creation and data loading
         conn.autocommit = True
         
         with conn.cursor() as cur:
