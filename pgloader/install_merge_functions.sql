@@ -25,10 +25,34 @@ DECLARE
         'offset', 'union', 'intersect', 'except', 'case', 'when',
         'then', 'else', 'end', 'true', 'false', 'unknown'
     ];
+    v_source_id_column TEXT;
+    v_target_id_column TEXT;
 BEGIN
     -- Set default excluded columns if not provided
     v_exclude_columns := COALESCE(p_exclude_columns, '{}'::TEXT[]);
     v_exclude_columns := array_append(v_exclude_columns, p_id_column);
+    
+    -- Get the actual case-sensitive column name from source table
+    EXECUTE format('SELECT column_name FROM information_schema.columns ' ||
+                  'WHERE table_name = %L AND lower(column_name) = lower(%L) ' ||
+                  'LIMIT 1', 
+                  p_temp_table, p_id_column) 
+    INTO v_source_id_column;
+    
+    IF v_source_id_column IS NULL THEN
+        RAISE EXCEPTION 'Column % does not exist in source table %', p_id_column, p_temp_table;
+    END IF;
+    
+    -- Get the actual case-sensitive column name from target table
+    EXECUTE format('SELECT column_name FROM information_schema.columns ' ||
+                  'WHERE table_name = %L AND lower(column_name) = lower(%L) ' ||
+                  'LIMIT 1', 
+                  p_target_table, p_id_column) 
+    INTO v_target_id_column;
+    
+    IF v_target_id_column IS NULL THEN
+        RAISE EXCEPTION 'Column % does not exist in target table %', p_id_column, p_target_table;
+    END IF;
     
     -- Build the dynamic SQL
     v_sql := format($sql$
@@ -39,7 +63,7 @@ BEGIN
                     SELECT jsonb_object_agg(
                         CASE 
                             WHEN key = ANY(%2$L) THEN '_' || key
-                            ELSE lower(key)
+                            ELSE key
                         END,
                         CASE 
                             WHEN value = '' THEN NULL
@@ -60,17 +84,26 @@ BEGIN
         UPDATE %5$I t
         SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
         FROM source_data sd
-        WHERE t.%1$I = sd.%1$I
+        WHERE t.%7$I = sd.%1$I
         AND sd.new_data IS NOT NULL;
     $sql$,
-    p_id_column, v_reserved_keywords, v_exclude_columns, p_temp_table, p_target_table, p_target_jsonb_column
+    v_source_id_column,  -- %1$I - Source ID column (case-sensitive)
+    v_reserved_keywords, -- %2$L - Reserved keywords
+    v_exclude_columns,   -- %3$L - Excluded columns
+    p_temp_table,        -- %4$I - Source table
+    p_target_table,      -- %5$I - Target table
+    p_target_jsonb_column, -- %6$I - Target JSONB column
+    v_target_id_column   -- %7$I - Target ID column (case-sensitive)
     );
+    
+    -- For debugging
+    RAISE NOTICE 'Executing SQL: %', v_sql;
     
     -- Execute the dynamic SQL
     EXECUTE v_sql;
     
     -- Log the merge operation
-    RAISE NOTICE 'Merged data from % to %.%', p_temp_table, p_target_table, p_target_jsonb_column;
+    RAISE NOTICE 'Merged data from %.% to %.%', p_temp_table, v_source_id_column, p_target_table, p_target_jsonb_column;
     
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'Error in merge_jsonb_from_temp: %', SQLERRM;
@@ -100,9 +133,33 @@ DECLARE
         'offset', 'union', 'intersect', 'except', 'case', 'when',
         'then', 'else', 'end', 'true', 'false', 'unknown'
     ];
+    v_source_id_column TEXT;
+    v_target_id_column TEXT;
 BEGIN
     v_exclude_columns := COALESCE(p_exclude_columns, '{}'::TEXT[]);
     v_exclude_columns := array_append(v_exclude_columns, p_id_column);
+    
+    -- Get the actual case-sensitive column name from source table
+    EXECUTE format('SELECT column_name FROM information_schema.columns ' ||
+                  'WHERE table_name = %L AND lower(column_name) = lower(%L) ' ||
+                  'LIMIT 1', 
+                  p_temp_table, p_id_column) 
+    INTO v_source_id_column;
+    
+    IF v_source_id_column IS NULL THEN
+        RAISE EXCEPTION 'Column % does not exist in source table %', p_id_column, p_temp_table;
+    END IF;
+    
+    -- Get the actual case-sensitive column name from target table
+    EXECUTE format('SELECT column_name FROM information_schema.columns ' ||
+                  'WHERE table_name = %L AND lower(column_name) = lower(%L) ' ||
+                  'LIMIT 1', 
+                  p_target_table, p_id_column) 
+    INTO v_target_id_column;
+    
+    IF v_target_id_column IS NULL THEN
+        RAISE EXCEPTION 'Column % does not exist in target table %', p_id_column, p_target_table;
+    END IF;
     
     v_sql := format($sql$
         -- This is the SQL that would be executed by merge_jsonb_from_temp:
@@ -113,7 +170,7 @@ BEGIN
                     SELECT jsonb_object_agg(
                         CASE 
                             WHEN key = ANY(%2$L) THEN '_' || key
-                            ELSE lower(key)
+                            ELSE key
                         END,
                         CASE 
                             WHEN value = '' THEN NULL
@@ -134,10 +191,16 @@ BEGIN
         UPDATE %5$I t
         SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
         FROM source_data sd
-        WHERE t.%1$I = sd.%1$I
+        WHERE t.%7$I = sd.%1$I
         AND sd.new_data IS NOT NULL;
     $sql$,
-    p_id_column, v_reserved_keywords, v_exclude_columns, p_temp_table, p_target_table, p_target_jsonb_column
+    v_source_id_column,  -- %1$I - Source ID column (case-sensitive)
+    v_reserved_keywords, -- %2$L - Reserved keywords
+    v_exclude_columns,   -- %3$L - Excluded columns
+    p_temp_table,        -- %4$I - Source table
+    p_target_table,      -- %5$I - Target table
+    p_target_jsonb_column, -- %6$I - Target JSONB column
+    v_target_id_column   -- %7$I - Target ID column (case-sensitive)
     );
     
     RETURN v_sql;
