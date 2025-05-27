@@ -215,6 +215,7 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             # Set client_min_messages to NOTICE to ensure NOTICE messages are sent to the client
             cur.execute("SET client_min_messages TO NOTICE;")
             
+            print("\n  - Retrieving merge SQL for debugging...")
             cur.execute("""
                 SELECT get_merge_jsonb_sql(
                     %s,  -- temp table name
@@ -228,6 +229,27 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             print("\nGenerated merge SQL:")
             print(merge_sql)
             
+            # Verify the temp table exists and has data
+            cur.execute(f"SELECT COUNT(*) FROM {temp_table_name};")
+            temp_table_count = cur.fetchone()[0]
+            print(f"\n  - Temp table {temp_table_name} contains {temp_table_count} rows")
+            
+            # Check if the ID column exists in the temp table
+            cur.execute(f"""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = '{temp_table_name}' 
+                AND column_name = 'ID_BB_GLOBAL';
+            """)
+            id_column_exists = cur.fetchone() is not None
+            print(f"  - ID_BB_GLOBAL column exists in temp table: {id_column_exists}")
+            
+            if id_column_exists:
+                # Sample some IDs from the temp table
+                cur.execute(f"""SELECT "ID_BB_GLOBAL" FROM {temp_table_name} LIMIT 5;""")
+                sample_ids = [row[0] for row in cur.fetchall()]
+                print(f"  - Sample IDs from temp table: {sample_ids}")
+            
             # Disable autocommit for the merge operation
             conn.autocommit = False
             
@@ -238,6 +260,7 @@ def process_csv_file(csv_file, conn, keep_temp=False):
                 cur.execute("SET client_min_messages TO NOTICE;")
                 
                 # Execute the merge function
+                print("  - Executing merge_jsonb_from_temp function...")
                 cur.execute("""
                     SELECT merge_jsonb_from_temp(
                         %s,  -- temp table name
@@ -245,8 +268,17 @@ def process_csv_file(csv_file, conn, keep_temp=False):
                         'csv_data',  -- target table name
                         'data',  -- JSONB column in target table
                         ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
-                    );
+                    ) as result;
                 """, (temp_table_name,))
+                
+                # Get the result of the merge operation
+                result = cur.fetchone()
+                print(f"  - Merge function result: {result}")
+                
+                # Check if any rows were affected by querying the target table
+                cur.execute("""SELECT COUNT(*) FROM csv_data;""")
+                total_count = cur.fetchone()[0]
+                print(f"  - Total rows in target table after merge: {total_count}")
                 
                 # Commit the merge transaction
                 conn.commit()
@@ -484,16 +516,6 @@ Examples:
     
     # Connect to PostgreSQL
     try:
-        # Set up a connection with a notice handler to capture RAISE NOTICE messages
-        def notice_handler(diag):
-            # Format and print the notice message
-            notice_message = f"NOTICE: {diag.message_primary}"
-            if diag.message_detail:
-                notice_message += f" - Detail: {diag.message_detail}"
-            if diag.message_hint:
-                notice_message += f" - Hint: {diag.message_hint}"
-            print(notice_message)
-        
         conn = psycopg2.connect(
             host=args.host,
             port=args.port,
@@ -502,8 +524,10 @@ Examples:
             password=args.password
         )
         
-        # Set the notice handler for this connection
-        conn.set_notice_handler(notice_handler)
+        # Enable verbose output by setting client_min_messages to NOTICE
+        with conn.cursor() as cur:
+            cur.execute("SET client_min_messages TO NOTICE;")
+            conn.commit()
         
         # Create table if it doesn't exist
         create_table_if_not_exists(conn, args.table)
