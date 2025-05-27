@@ -69,8 +69,8 @@ BEGIN
                             WHEN value = '' THEN NULL
                             WHEN value ~ '^[0-9]+(\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
                             WHEN lower(value) IN ('true', 'false') THEN to_jsonb(lower(value)::boolean)
-                            WHEN value ~ '^\\d{4}-\\d{2}-\\d{2}(T| )?\\d{2}:\\d{2}:\\d{2}' THEN to_jsonb(value::timestamp)
-                            WHEN value ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN to_jsonb(value::date)
+                            WHEN value ~ '^\\\\d{4}-\\\\d{2}-\\\\d{2}(T| )?\\\\d{2}:\\\\d{2}:\\\\d{2}' THEN to_jsonb(value::timestamp)
+                            WHEN value ~ '^\\\\d{4}-\\\\d{2}-\\\\d{2}$' THEN to_jsonb(value::date)
                             ELSE to_jsonb(value)
                         END
                     )
@@ -80,12 +80,27 @@ BEGIN
                     WHERE key <> ALL(%3$L)
                 ) as new_data
             FROM %4$I
+        ),
+        -- First update existing rows
+        updated AS (
+            UPDATE %5$I t
+            SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
+            FROM source_data sd
+            WHERE t.%7$I = sd.%1$I
+            AND sd.new_data IS NOT NULL
+            RETURNING t.%7$I
         )
-        UPDATE %5$I t
-        SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
+        -- Then insert rows that don't exist
+        INSERT INTO %5$I (%7$I, %6$I)
+        SELECT sd.%1$I, sd.new_data
         FROM source_data sd
-        WHERE t.%7$I = sd.%1$I
-        AND sd.new_data IS NOT NULL;
+        WHERE sd.new_data IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1 FROM updated u WHERE u.%7$I = sd.%1$I
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM %5$I t WHERE t.%7$I = sd.%1$I
+        );
     $sql$,
     v_source_id_column,  -- %1$I - Source ID column (case-sensitive)
     v_reserved_keywords, -- %2$L - Reserved keywords
@@ -174,10 +189,10 @@ BEGIN
                         END,
                         CASE 
                             WHEN value = '' THEN NULL
-                            WHEN value ~ '^[0-9]+(\\\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
+                            WHEN value ~ '^[0-9]+(\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
                             WHEN lower(value) IN ('true', 'false') THEN to_jsonb(lower(value)::boolean)
-                            WHEN value ~ '^\\\\d{4}-\\\\d{2}-\\\\d{2}(T| )?\\\\d{2}:\\\\d{2}:\\\\d{2}' THEN to_jsonb(value::timestamp)
-                            WHEN value ~ '^\\\\d{4}-\\\\d{2}-\\\\d{2}$' THEN to_jsonb(value::date)
+                            WHEN value ~ '^\\d{4}-\\d{2}-\\d{2}(T| )?\\d{2}:\\d{2}:\\d{2}' THEN to_jsonb(value::timestamp)
+                            WHEN value ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN to_jsonb(value::date)
                             ELSE to_jsonb(value)
                         END
                     )
@@ -187,12 +202,27 @@ BEGIN
                     WHERE key <> ALL(%3$L)
                 ) as new_data
             FROM %4$I
+        ),
+        -- First update existing rows
+        updated AS (
+            UPDATE %5$I t
+            SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
+            FROM source_data sd
+            WHERE t.%7$I = sd.%1$I
+            AND sd.new_data IS NOT NULL
+            RETURNING t.%7$I
         )
-        UPDATE %5$I t
-        SET %6$I = COALESCE(t.%6$I, '{}'::jsonb) || sd.new_data
+        -- Then insert rows that don't exist
+        INSERT INTO %5$I (%7$I, %6$I)
+        SELECT sd.%1$I, sd.new_data
         FROM source_data sd
-        WHERE t.%7$I = sd.%1$I
-        AND sd.new_data IS NOT NULL;
+        WHERE sd.new_data IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1 FROM updated u WHERE u.%7$I = sd.%1$I
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM %5$I t WHERE t.%7$I = sd.%1$I
+        );
     $sql$,
     v_source_id_column,  -- %1$I - Source ID column (case-sensitive)
     v_reserved_keywords, -- %2$L - Reserved keywords
