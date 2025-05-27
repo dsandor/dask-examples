@@ -212,6 +212,9 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             print(f"  - Successfully removed temporary import file")
             
             # Get the merge SQL for debugging
+            # Set client_min_messages to NOTICE to ensure NOTICE messages are sent to the client
+            cur.execute("SET client_min_messages TO NOTICE;")
+            
             cur.execute("""
                 SELECT get_merge_jsonb_sql(
                     %s,  -- temp table name
@@ -231,6 +234,10 @@ def process_csv_file(csv_file, conn, keep_temp=False):
             try:
                 # Execute the merge in a transaction
                 print("  - Starting merge transaction...")
+                # Set client_min_messages to NOTICE to ensure NOTICE messages are sent to the client
+                cur.execute("SET client_min_messages TO NOTICE;")
+                
+                # Execute the merge function
                 cur.execute("""
                     SELECT merge_jsonb_from_temp(
                         %s,  -- temp table name
@@ -477,6 +484,16 @@ Examples:
     
     # Connect to PostgreSQL
     try:
+        # Set up a connection with a notice handler to capture RAISE NOTICE messages
+        def notice_handler(diag):
+            # Format and print the notice message
+            notice_message = f"NOTICE: {diag.message_primary}"
+            if diag.message_detail:
+                notice_message += f" - Detail: {diag.message_detail}"
+            if diag.message_hint:
+                notice_message += f" - Hint: {diag.message_hint}"
+            print(notice_message)
+        
         conn = psycopg2.connect(
             host=args.host,
             port=args.port,
@@ -484,6 +501,9 @@ Examples:
             user=args.user,
             password=args.password
         )
+        
+        # Set the notice handler for this connection
+        conn.set_notice_handler(notice_handler)
         
         # Create table if it doesn't exist
         create_table_if_not_exists(conn, args.table)
