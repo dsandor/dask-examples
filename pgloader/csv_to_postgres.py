@@ -40,6 +40,7 @@ from psycopg2.extras import Json
 import time
 import re
 import gzip
+import hashlib
 from typing import Dict, List, Optional, Any, Iterable, Tuple
 import shutil
 from datetime import datetime
@@ -119,8 +120,9 @@ def create_temp_table(conn, columns: List[str]) -> str:
 def process_csv_file(csv_file, conn, keep_temp=False):
     """Process a single CSV file and load it into PostgreSQL."""
     try:
-        # Generate a unique table name
-        temp_table_name = f"temp_csv_import_{int(time.time())}"
+        # Generate a unique table name with a short hash of the filename to avoid collisions
+        filename_hash = hashlib.md5(os.path.basename(csv_file).encode()).hexdigest()[:8]
+        temp_table_name = f"temp_csv_import_{int(time.time())}_{filename_hash}"
         
         # Read CSV to determine column count and names
         with open(csv_file, 'r', encoding='utf-8') as f:
