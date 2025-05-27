@@ -66,7 +66,9 @@ BEGIN
                             ELSE key
                         END,
                         CASE 
+                            WHEN value IS NULL THEN NULL
                             WHEN value = '' THEN NULL
+                            WHEN upper(value) = 'N.A.' THEN NULL
                             WHEN value ~ '^[0-9]+(\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
                             WHEN lower(value) IN ('true', 'false') THEN to_jsonb(lower(value)::boolean)
                             WHEN value ~ '^\\\\d{4}-\\\\d{2}-\\\\d{2}(T| )?\\\\d{2}:\\\\d{2}:\\\\d{2}' THEN to_jsonb(value::timestamp)
@@ -188,8 +190,10 @@ BEGIN
                             ELSE key
                         END,
                         CASE 
+                            WHEN value IS NULL THEN NULL
                             WHEN value = '' THEN NULL
-                            WHEN value ~ '^[0-9]+(\\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
+                            WHEN upper(value) = 'N.A.' THEN NULL
+                            WHEN value ~ '^[0-9]+(\.?[0-9]+)?$' THEN to_jsonb(value::numeric)
                             WHEN lower(value) IN ('true', 'false') THEN to_jsonb(lower(value)::boolean)
                             WHEN value ~ '^\\d{4}-\\d{2}-\\d{2}(T| )?\\d{2}:\\d{2}:\\d{2}' THEN to_jsonb(value::timestamp)
                             WHEN value ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN to_jsonb(value::date)
