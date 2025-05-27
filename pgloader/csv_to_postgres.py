@@ -10,7 +10,9 @@ Usage:
     python csv_to_postgres.py [--host HOST] [--port PORT] [--dbname DBNAME] 
                              [--user USER] [--password PASSWORD] 
                              [--table TABLE] [--limit LIMIT] 
-                             csv_file [csv_file ...]
+                             [--import-root DIR] [--include-regex PATTERN]
+                             [--exclude-regex PATTERN]
+                             [csv_file [csv_file ...]]
 
 Arguments:
     csv_file            - One or more CSV files to load
@@ -21,6 +23,9 @@ Arguments:
     --password          - PostgreSQL password (default: Password123)
     --table             - Table name to load data into (default: csv_data)
     --limit             - Limit the number of rows to process per file (default: all)
+    --import-root       - Root directory to search for CSV files
+    --include-regex     - Regex pattern to match directory names to include
+    --exclude-regex     - Regex pattern to match directory names to exclude
     --help              - Show this help message
 """
 
@@ -33,8 +38,11 @@ import argparse
 import psycopg2
 from psycopg2.extras import Json
 import time
-from typing import Dict, List, Optional, Any, Iterable
+import re
+import gzip
+from typing import Dict, List, Optional, Any, Iterable, Tuple
 import shutil
+from datetime import datetime
 
 
 def create_table_if_not_exists(conn, table_name: str) -> None:
@@ -285,6 +293,118 @@ def expand_file_patterns(patterns: Iterable[str]) -> List[str]:
     return sorted(list(set(files)))
 
 
+def find_latest_csv_gz_file(directory: str) -> Optional[str]:
+    """
+    Find the most recent CSV.GZ file in a directory by examining the filename
+    which includes a date in the format YYYYMMDD.
+    
+    Args:
+        directory: Directory to search for CSV.GZ files
+        
+    Returns:
+        Path to the most recent CSV.GZ file, or None if no files found
+    """
+    # Look for files with pattern *YYYYMMDD*.csv.gz
+    pattern = re.compile(r'.*?(\d{8}).*?\.csv\.gz$', re.IGNORECASE)
+    latest_file = None
+    latest_date = None
+    
+    for filename in os.listdir(directory):
+        match = pattern.match(filename)
+        if match:
+            try:
+                date_str = match.group(1)
+                file_date = datetime.strptime(date_str, '%Y%m%d')
+                
+                if latest_date is None or file_date > latest_date:
+                    latest_date = file_date
+                    latest_file = os.path.join(directory, filename)
+            except ValueError:
+                # Skip files with invalid date format
+                continue
+    
+    if latest_file:
+        print(f"Found latest CSV.GZ file: {latest_file} (date: {latest_date.strftime('%Y-%m-%d')})") 
+    else:
+        print(f"No CSV.GZ files with date format YYYYMMDD found in {directory}")
+        
+    return latest_file
+
+
+def extract_csv_gz(gz_file: str, output_dir: str = './import') -> str:
+    """
+    Extract a gzipped CSV file to the specified output directory.
+    
+    Args:
+        gz_file: Path to the gzipped CSV file
+        output_dir: Directory to extract the file to
+        
+    Returns:
+        Path to the extracted CSV file
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create output filename by removing .gz extension
+    base_name = os.path.basename(gz_file)
+    if base_name.lower().endswith('.gz'):
+        output_name = base_name[:-3]  # Remove .gz extension
+    else:
+        output_name = f"extracted_{base_name}"
+        
+    output_path = os.path.join(output_dir, output_name)
+    
+    print(f"Extracting {gz_file} to {output_path}")
+    
+    try:
+        with gzip.open(gz_file, 'rb') as f_in:
+            with open(output_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        print(f"Successfully extracted to {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"Error extracting {gz_file}: {str(e)}")
+        raise
+
+
+def find_matching_directories(root_dir: str, include_pattern: Optional[str], exclude_pattern: Optional[str]) -> List[str]:
+    """
+    Find directories under root_dir that match include_pattern but not exclude_pattern.
+    
+    Args:
+        root_dir: Root directory to search
+        include_pattern: Regex pattern for directories to include (None means include all)
+        exclude_pattern: Regex pattern for directories to exclude (None means exclude none)
+        
+    Returns:
+        List of matching directory paths
+    """
+    if not os.path.isdir(root_dir):
+        print(f"Error: {root_dir} is not a valid directory")
+        return []
+        
+    include_regex = re.compile(include_pattern) if include_pattern else None
+    exclude_regex = re.compile(exclude_pattern) if exclude_pattern else None
+    
+    matching_dirs = []
+    
+    for item in os.listdir(root_dir):
+        item_path = os.path.join(root_dir, item)
+        
+        if not os.path.isdir(item_path):
+            continue
+            
+        # Check if directory matches include pattern
+        include_match = True if include_regex is None else bool(include_regex.search(item))
+        
+        # Check if directory matches exclude pattern
+        exclude_match = False if exclude_regex is None else bool(exclude_regex.search(item))
+        
+        if include_match and not exclude_match:
+            matching_dirs.append(item_path)
+            
+    return sorted(matching_dirs)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Load CSV files into PostgreSQL. Supports wildcards (e.g., 'data/*.csv')",
@@ -311,10 +431,16 @@ Examples:
   
   # Keep temporary tables after loading
   python csv_to_postgres.py "data/*.csv" --keep-temp
+  
+  # Use import-root with directory patterns
+  python csv_to_postgres.py --import-root /data/feeds --include-regex "company_.*" --exclude-regex ".*_test"
+  
+  # Process latest CSV.GZ files from matching directories
+  python csv_to_postgres.py --import-root /data/feeds --include-regex "finance_.*"
 """)
     parser.add_argument(
         "csv_files", 
-        nargs='+', 
+        nargs='*',  # Changed from '+' to '*' to make it optional when using --import-root
         help="CSV files or patterns to load (supports wildcards like 'data/*.csv')"
     )
     parser.add_argument("--host", default="localhost", help="PostgreSQL host (default: localhost)")
@@ -326,12 +452,20 @@ Examples:
     parser.add_argument("--limit", type=int, help="Limit the number of rows to process per file")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument("--keep-temp", action="store_true", help="Keep temporary tables after loading")
+    parser.add_argument("--import-root", help="Root directory to search for CSV.GZ files")
+    parser.add_argument("--include-regex", help="Regex pattern to match directory names to include")
+    parser.add_argument("--exclude-regex", help="Regex pattern to match directory names to exclude")
     
     if len(sys.argv) == 1 or "--help" in sys.argv:
         print(__doc__)
         sys.exit(0)
     
     args = parser.parse_args()
+    
+    # Validate arguments
+    if not args.csv_files and not args.import_root:
+        print("Error: Either csv_files or --import-root must be specified")
+        sys.exit(1)
     
     # Connect to PostgreSQL
     try:
@@ -348,15 +482,46 @@ Examples:
         
         total_rows = 0
         start_time = time.time()
+        file_paths = []
         
-        # Expand file patterns and process each matching file
-        file_paths = expand_file_patterns(args.csv_files)
+        # Handle import-root if specified
+        if args.import_root:
+            print(f"Searching for directories in {args.import_root}")
+            print(f"Include pattern: {args.include_regex or 'None (include all)'}")
+            print(f"Exclude pattern: {args.exclude_regex or 'None (exclude none)'}")
+            
+            matching_dirs = find_matching_directories(
+                args.import_root, 
+                args.include_regex, 
+                args.exclude_regex
+            )
+            
+            print(f"Found {len(matching_dirs)} matching directories")
+            
+            # Find the latest CSV.GZ file in each matching directory
+            for dir_path in matching_dirs:
+                print(f"\nSearching for latest CSV.GZ file in: {dir_path}")
+                latest_file = find_latest_csv_gz_file(dir_path)
+                
+                if latest_file:
+                    # Extract the CSV.GZ file
+                    try:
+                        extracted_path = extract_csv_gz(latest_file)
+                        file_paths.append(extracted_path)
+                    except Exception as e:
+                        print(f"Error extracting {latest_file}: {str(e)}")
+        
+        # Handle explicit CSV files if specified
+        if args.csv_files:
+            # Expand file patterns and process each matching file
+            explicit_files = expand_file_patterns(args.csv_files)
+            file_paths.extend(explicit_files)
         
         if not file_paths:
-            print("Error: No matching files found.")
+            print("Error: No files to process.")
             return
             
-        print(f"Found {len(file_paths)} files to process")
+        print(f"\nFound {len(file_paths)} files to process")
         
         # Process each CSV file
         for i, file_path in enumerate(file_paths, 1):
