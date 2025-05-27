@@ -334,6 +334,7 @@ def find_latest_csv_gz_file(directory: str) -> Optional[str]:
 def extract_csv_gz(gz_file: str, output_dir: str = './import') -> str:
     """
     Extract a gzipped CSV file to the specified output directory.
+    If the file already exists in the output directory, skip extraction.
     
     Args:
         gz_file: Path to the gzipped CSV file
@@ -352,6 +353,11 @@ def extract_csv_gz(gz_file: str, output_dir: str = './import') -> str:
         output_name = f"extracted_{base_name}"
         
     output_path = os.path.join(output_dir, output_name)
+    
+    # Check if file already exists
+    if os.path.exists(output_path):
+        print(f"File already exists: {output_path}. Skipping extraction.")
+        return output_path
     
     print(f"Extracting {gz_file} to {output_path}")
     
