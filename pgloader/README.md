@@ -365,3 +365,84 @@ Both scripts are designed to handle large files efficiently:
 - Process files line by line to minimize memory usage
 - Report progress periodically
 - Can be stopped after processing a specific number of rows
+
+# CSV Column Analyzer
+
+A high-performance Python script for analyzing unique values in CSV columns. This tool efficiently processes large CSV files and generates a summary of value frequencies for any specified column.
+
+## Features
+
+- Fast CSV processing using pandas and pyarrow
+- Memory-efficient by only reading the required column
+- Simple command-line interface
+- Generates clean, sorted output in CSV format
+- Handles large files efficiently
+
+## Requirements
+
+- Python 3.7+
+- pandas >= 2.1.0
+- pyarrow >= 14.0.1
+
+## Installation
+
+1. Clone this repository or download the script
+2. Install the required dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+```bash
+python analyze_column.py input.csv output.csv "column_name"
+```
+
+### Arguments
+
+- `input.csv`: Path to your input CSV file
+- `output.csv`: Path where the results will be saved
+- `column_name`: Name of the column to analyze (must match exactly with the column header in your CSV)
+
+### Example
+
+If you have a CSV file `data.csv` with a column named "city", you can analyze it with:
+
+```bash
+python analyze_column.py data.csv results.csv "city"
+```
+
+### Output
+
+The script generates a CSV file with two columns:
+- `value`: The unique values found in the specified column
+- `count`: The number of occurrences for each value
+
+Example output:
+```csv
+value,count
+New York,150
+London,120
+Paris,80
+```
+
+## Performance Optimizations
+
+The script is optimized for processing large CSV files through:
+- Selective column reading (only loads the required column)
+- PyArrow backend for efficient memory usage
+- Streaming data processing
+- Optimized data structures for counting
+
+## Error Handling
+
+The script includes error handling for:
+- Missing input files
+- Invalid column names
+- CSV parsing errors
+- File permission issues
+
+## Contributing
+
+Feel free to submit issues and enhancement requests!
