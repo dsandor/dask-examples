@@ -41,10 +41,11 @@ import time
 import re
 import gzip
 import hashlib
-from typing import Dict, List, Optional, Any, Iterable, Tuple
+from typing import Dict, List, Optional, Any, Iterable, Tuple, Set
 import shutil
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+from collections import defaultdict
 
 @dataclass
 class FileProcessingResult:
@@ -68,6 +69,38 @@ class FileProcessingResult:
             'processing_time_seconds': self.processing_time.total_seconds(),
             'error_message': self.error_message
         }
+
+class KeyTracker:
+    """Class to track primary keys and their occurrences across files."""
+    def __init__(self):
+        self.key_data: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+            'count': 0,
+            'files': set()
+        })
+    
+    def add_key(self, key: str, file_path: str) -> None:
+        """Add a key and its file occurrence to the tracker."""
+        self.key_data[key]['count'] += 1
+        self.key_data[key]['files'].add(os.path.basename(file_path))
+    
+    def write_to_csv(self, output_file: str) -> None:
+        """Write the key tracking data to a CSV file."""
+        with open(output_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['KEY', 'COUNT', 'EXISTS_IN'])
+            
+            # Sort by count (descending) and then by key
+            sorted_keys = sorted(
+                self.key_data.items(),
+                key=lambda x: (-x[1]['count'], x[0])
+            )
+            
+            for key, data in sorted_keys:
+                writer.writerow([
+                    key,
+                    data['count'],
+                    ','.join(sorted(data['files']))
+                ])
 
 def create_table_if_not_exists(conn, table_name: str) -> None:
     """
@@ -223,7 +256,7 @@ def print_processing_summary(results: List[FileProcessingResult]) -> None:
     print(f"\nSummary log written to: {log_file}")
 
 
-def process_csv_file(csv_file, conn, keep_temp=False) -> FileProcessingResult:
+def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyTracker] = None) -> FileProcessingResult:
     """Process a single CSV file and load it into PostgreSQL."""
     start_time = datetime.now()
     result = FileProcessingResult(
@@ -364,6 +397,12 @@ def process_csv_file(csv_file, conn, keep_temp=False) -> FileProcessingResult:
                 cur.execute(f"""SELECT "ID_BB_GLOBAL" FROM {temp_table_name} LIMIT 5;""")
                 sample_ids = [row[0] for row in cur.fetchall()]
                 print(f"  - Sample IDs from temp table: {sample_ids}")
+                
+                # Track all keys in this file if key_tracker is provided
+                if key_tracker is not None:
+                    cur.execute(f"""SELECT "ID_BB_GLOBAL" FROM {temp_table_name};""")
+                    for row in cur.fetchall():
+                        key_tracker.add_key(row[0], csv_file)
             
             # Disable autocommit for the merge operation
             conn.autocommit = False
@@ -646,6 +685,9 @@ Examples:
         print("Error: Either csv_files or --import-root must be specified")
         sys.exit(1)
     
+    # Initialize key tracker
+    key_tracker = KeyTracker()
+    
     # Connect to PostgreSQL
     try:
         conn = psycopg2.connect(
@@ -712,7 +754,7 @@ Examples:
         for i, file_path in enumerate(file_paths, 1):
             print(f"\nProcessing file {i} of {len(file_paths)}: {file_path}")
             try:
-                result = process_csv_file(file_path, conn, args.keep_temp)
+                result = process_csv_file(file_path, conn, args.keep_temp, key_tracker)
                 processing_results.append(result)
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
@@ -730,6 +772,12 @@ Examples:
         
         # Print the final summary
         print_processing_summary(processing_results)
+        
+        # Write key tracking results to CSV
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        key_tracking_file = f"key_tracking_{timestamp}.csv"
+        key_tracker.write_to_csv(key_tracking_file)
+        print(f"\nKey tracking results written to: {key_tracking_file}")
         
     except Exception as e:
         print(f"Error: {str(e)}")
