@@ -430,24 +430,38 @@ python analyze_column.py data.csv results.csv "city" --min-count 2
 To combine multiple analysis output files and aggregate their counts:
 
 ```bash
-python merge_analysis.py "analysis_*.csv" merged_results.csv
+python merge_analysis.py input_file1.csv input_file2.csv ... output.csv
+```
+
+Or using glob patterns:
+
+```bash
+python merge_analysis.py "analysis_*.csv" output.csv
 ```
 
 #### Arguments
 
-- `input_pattern`: Glob pattern for input files (e.g., "analysis_*.csv")
+- `input_files`: One or more input files to merge. Can be:
+  - Explicit file paths (e.g., `file1.csv file2.csv`)
+  - Glob patterns (e.g., `"analysis_*.csv"`)
+  - Mix of both
 - `output_file`: Path to save the merged output
 
 #### Examples
 
-Merge all analysis files in the current directory:
+Merge specific files:
+```bash
+python merge_analysis.py analysis_2023_01.csv analysis_2023_02.csv merged_2023.csv
+```
+
+Merge using glob pattern:
 ```bash
 python merge_analysis.py "analysis_*.csv" merged_results.csv
 ```
 
-Merge specific analysis files:
+Mix of explicit files and patterns:
 ```bash
-python merge_analysis.py "results_2023_*.csv" merged_2023.csv
+python merge_analysis.py analysis_2023_01.csv "analysis_2023_*.csv" merged_2023.csv
 ```
 
 ### Output

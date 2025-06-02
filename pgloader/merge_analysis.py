@@ -76,16 +76,32 @@ def merge_analysis_files(input_files: List[str], output_file: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description='Merge multiple analysis output files and aggregate their counts')
-    parser.add_argument('input_pattern', help='Glob pattern for input files (e.g., "analysis_*.csv")')
+    parser.add_argument('input_files', nargs='+', help='Input files to merge (can be glob patterns or explicit file paths)')
     parser.add_argument('output_file', help='Path to save the merged output')
     
     args = parser.parse_args()
     
-    # Get list of files matching the pattern
-    input_files = glob.glob(args.input_pattern)
+    # Process input files
+    input_files = []
+    for pattern in args.input_files:
+        # Check if the pattern is a glob pattern
+        if any(c in pattern for c in '*?[]'):
+            matched_files = glob.glob(pattern)
+            if not matched_files:
+                print_colored(f"Warning: No files found matching pattern '{pattern}'", Fore.YELLOW)
+            input_files.extend(matched_files)
+        else:
+            # If not a glob pattern, treat as a direct file path
+            if Path(pattern).exists():
+                input_files.append(pattern)
+            else:
+                print_colored(f"Warning: File not found: '{pattern}'", Fore.YELLOW)
+    
+    # Remove duplicates while preserving order
+    input_files = list(dict.fromkeys(input_files))
     
     if not input_files:
-        print_colored(f"Error: No files found matching pattern '{args.input_pattern}'", Fore.RED, Style.BRIGHT)
+        print_colored("Error: No valid input files found", Fore.RED, Style.BRIGHT)
         return
     
     try:
