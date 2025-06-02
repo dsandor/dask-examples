@@ -380,6 +380,7 @@ A high-performance Python script for analyzing unique values in CSV columns. Thi
 - Optional filtering of low-frequency values
 - Colorized console output for better readability
 - Detailed summary metrics
+- Merge multiple analysis results with count aggregation
 
 ## Requirements
 
@@ -399,18 +400,20 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Analyzing CSV Files
+
 ```bash
 python analyze_column.py input.csv output.csv "column_name" [--min-count N]
 ```
 
-### Arguments
+#### Arguments
 
 - `input.csv`: Path to your input CSV file
 - `output.csv`: Path where the results will be saved
 - `column_name`: Name of the column to analyze (must match exactly with the column header in your CSV)
 - `--min-count`: Optional: Minimum count threshold for values to be included in output (default: 1)
 
-### Examples
+#### Examples
 
 Basic usage:
 ```bash
@@ -422,9 +425,36 @@ Filter out values that appear only once:
 python analyze_column.py data.csv results.csv "city" --min-count 2
 ```
 
+### Merging Analysis Results
+
+To combine multiple analysis output files and aggregate their counts:
+
+```bash
+python merge_analysis.py "analysis_*.csv" merged_results.csv
+```
+
+#### Arguments
+
+- `input_pattern`: Glob pattern for input files (e.g., "analysis_*.csv")
+- `output_file`: Path to save the merged output
+
+#### Examples
+
+Merge all analysis files in the current directory:
+```bash
+python merge_analysis.py "analysis_*.csv" merged_results.csv
+```
+
+Merge specific analysis files:
+```bash
+python merge_analysis.py "results_2023_*.csv" merged_2023.csv
+```
+
 ### Output
 
-The script generates two types of output:
+#### Analysis Output
+
+The analysis script generates two types of output:
 
 1. **Console Output**: A colorized summary showing:
    - Total number of rows processed
@@ -457,30 +487,69 @@ The script generates two types of output:
    Paris,80
    ```
 
+#### Merge Output
+
+The merge script generates:
+
+1. **Console Output**: A colorized summary showing:
+   - Total number of files processed
+   - Total number of unique values after merging
+   - Total count across all files
+
+   Example console output:
+   ```
+   Processing 3 analysis files...
+   Reading file 1/3: analysis_2023_01.csv
+   Reading file 2/3: analysis_2023_02.csv
+   Reading file 3/3: analysis_2023_03.csv
+
+   === Merge Summary ===
+   Total Files Processed: 3
+   Total Unique Values: 1,234
+   Total Count: 56,789
+
+   Results saved to: merged_results.csv
+   ```
+
+2. **CSV File**: A merged CSV file with aggregated counts:
+   - `value`: The unique values found across all files
+   - `count`: The sum of counts for each value
+
+   Example merged CSV output:
+   ```csv
+   value,count
+   New York,450
+   London,360
+   Paris,240
+   ```
+
 ### Color Scheme
 
 The console output uses colors to make information easily scannable:
 - Cyan: Headers and progress messages
-- Green: Success messages and total rows
-- Yellow: Unique values count
-- Magenta: Filtered values count
+- Green: Success messages and total rows/files
+- Yellow: Unique values count and file processing
+- Magenta: Total counts
 - Red: Errors and excluded values
 
 ## Performance Optimizations
 
-The script is optimized for processing large CSV files through:
+The scripts are optimized for processing large CSV files through:
 - Selective column reading (only loads the required column)
 - PyArrow backend for efficient memory usage
 - Streaming data processing
 - Optimized data structures for counting
+- Efficient merging of multiple analysis results
 
 ## Error Handling
 
-The script includes error handling for:
+The scripts include error handling for:
 - Missing input files
 - Invalid column names
 - CSV parsing errors
 - File permission issues
+- Invalid file formats
+- Pattern matching errors
 
 All errors are displayed in red for easy identification.
 
