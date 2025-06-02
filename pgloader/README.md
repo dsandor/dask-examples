@@ -377,12 +377,16 @@ A high-performance Python script for analyzing unique values in CSV columns. Thi
 - Simple command-line interface
 - Generates clean, sorted output in CSV format
 - Handles large files efficiently
+- Optional filtering of low-frequency values
+- Colorized console output for better readability
+- Detailed summary metrics
 
 ## Requirements
 
 - Python 3.7+
 - pandas >= 2.1.0
 - pyarrow >= 14.0.1
+- colorama >= 0.4.6
 
 ## Installation
 
@@ -396,7 +400,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python analyze_column.py input.csv output.csv "column_name"
+python analyze_column.py input.csv output.csv "column_name" [--min-count N]
 ```
 
 ### Arguments
@@ -404,28 +408,63 @@ python analyze_column.py input.csv output.csv "column_name"
 - `input.csv`: Path to your input CSV file
 - `output.csv`: Path where the results will be saved
 - `column_name`: Name of the column to analyze (must match exactly with the column header in your CSV)
+- `--min-count`: Optional: Minimum count threshold for values to be included in output (default: 1)
 
-### Example
+### Examples
 
-If you have a CSV file `data.csv` with a column named "city", you can analyze it with:
-
+Basic usage:
 ```bash
 python analyze_column.py data.csv results.csv "city"
 ```
 
+Filter out values that appear only once:
+```bash
+python analyze_column.py data.csv results.csv "city" --min-count 2
+```
+
 ### Output
 
-The script generates a CSV file with two columns:
-- `value`: The unique values found in the specified column
-- `count`: The number of occurrences for each value
+The script generates two types of output:
 
-Example output:
-```csv
-value,count
-New York,150
-London,120
-Paris,80
-```
+1. **Console Output**: A colorized summary showing:
+   - Total number of rows processed
+   - Number of unique values found
+   - Number of values meeting the minimum count threshold
+   - Number of excluded values (when min-count > 1)
+
+   Example console output:
+   ```
+   Analyzing column 'city' in data.csv...
+
+   === Analysis Summary ===
+   Total Rows Processed: 1,234,567
+   Unique Values Found: 15,432
+   Values with Count ≥ 2: 12,345
+   Values Excluded (Count < 2): 3,087
+
+   Results saved to: results.csv
+   ```
+
+2. **CSV File**: A CSV file with two columns:
+   - `value`: The unique values found in the specified column
+   - `count`: The number of occurrences for each value
+
+   Example CSV output:
+   ```csv
+   value,count
+   New York,150
+   London,120
+   Paris,80
+   ```
+
+### Color Scheme
+
+The console output uses colors to make information easily scannable:
+- Cyan: Headers and progress messages
+- Green: Success messages and total rows
+- Yellow: Unique values count
+- Magenta: Filtered values count
+- Red: Errors and excluded values
 
 ## Performance Optimizations
 
@@ -442,6 +481,8 @@ The script includes error handling for:
 - Invalid column names
 - CSV parsing errors
 - File permission issues
+
+All errors are displayed in red for easy identification.
 
 ## Contributing
 
