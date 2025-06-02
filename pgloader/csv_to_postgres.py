@@ -43,8 +43,31 @@ import gzip
 import hashlib
 from typing import Dict, List, Optional, Any, Iterable, Tuple
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
+from dataclasses import dataclass
 
+@dataclass
+class FileProcessingResult:
+    """Class to track the results of processing a single file."""
+    file_path: str
+    status: str  # 'success' or 'error'
+    rows_processed: int
+    start_time: datetime
+    end_time: datetime
+    error_message: Optional[str] = None
+    
+    @property
+    def processing_time(self) -> timedelta:
+        return self.end_time - self.start_time
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'file_path': self.file_path,
+            'status': self.status,
+            'rows_processed': self.rows_processed,
+            'processing_time_seconds': self.processing_time.total_seconds(),
+            'error_message': self.error_message
+        }
 
 def create_table_if_not_exists(conn, table_name: str) -> None:
     """
@@ -117,8 +140,97 @@ def create_temp_table(conn, columns: List[str]) -> str:
     return temp_table
 
 
-def process_csv_file(csv_file, conn, keep_temp=False):
+def write_summary_to_log(results: List[FileProcessingResult], log_file: str) -> None:
+    """Write the processing summary to a log file."""
+    with open(log_file, 'w') as f:
+        f.write("="*80 + "\n")
+        f.write("PROCESSING SUMMARY\n")
+        f.write("="*80 + "\n")
+        
+        total_rows = sum(r.rows_processed for r in results if r.status == 'success')
+        total_time = sum(r.processing_time.total_seconds() for r in results)
+        success_count = sum(1 for r in results if r.status == 'success')
+        error_count = sum(1 for r in results if r.status == 'error')
+        
+        f.write(f"Total Files Processed: {len(results)}\n")
+        f.write(f"Successful Files: {success_count}\n")
+        f.write(f"Failed Files: {error_count}\n")
+        f.write(f"Total Rows Processed: {total_rows:,}\n")
+        f.write(f"Total Processing Time: {total_time:.2f} seconds\n")
+        f.write(f"Average Processing Time per File: {total_time/len(results):.2f} seconds\n")
+        f.write(f"Average Rows per Second: {total_rows/total_time:.2f}\n")
+        
+        f.write("\n" + "-"*80 + "\n")
+        f.write("DETAILED FILE RESULTS\n")
+        f.write("-"*80 + "\n")
+        
+        # Sort results by processing time (descending)
+        sorted_results = sorted(results, key=lambda x: x.processing_time, reverse=True)
+        
+        for i, result in enumerate(sorted_results, 1):
+            f.write(f"\n{i}. {result.file_path}\n")
+            f.write(f"   Status: {result.status.upper()}\n")
+            f.write(f"   Rows Processed: {result.rows_processed:,}\n")
+            f.write(f"   Processing Time: {result.processing_time.total_seconds():.2f} seconds\n")
+            if result.error_message:
+                f.write(f"   Error: {result.error_message}\n")
+        
+        f.write("\n" + "="*80 + "\n")
+
+
+def print_processing_summary(results: List[FileProcessingResult]) -> None:
+    """Print a detailed summary of all processed files and write to log file."""
+    total_rows = sum(r.rows_processed for r in results if r.status == 'success')
+    total_time = sum(r.processing_time.total_seconds() for r in results)
+    success_count = sum(1 for r in results if r.status == 'success')
+    error_count = sum(1 for r in results if r.status == 'error')
+    
+    print("\n" + "="*80)
+    print("PROCESSING SUMMARY")
+    print("="*80)
+    print(f"Total Files Processed: {len(results)}")
+    print(f"Successful Files: {success_count}")
+    print(f"Failed Files: {error_count}")
+    print(f"Total Rows Processed: {total_rows:,}")
+    print(f"Total Processing Time: {total_time:.2f} seconds")
+    print(f"Average Processing Time per File: {total_time/len(results):.2f} seconds")
+    print(f"Average Rows per Second: {total_rows/total_time:.2f}")
+    
+    print("\n" + "-"*80)
+    print("DETAILED FILE RESULTS")
+    print("-"*80)
+    
+    # Sort results by processing time (descending)
+    sorted_results = sorted(results, key=lambda x: x.processing_time, reverse=True)
+    
+    for i, result in enumerate(sorted_results, 1):
+        print(f"\n{i}. {result.file_path}")
+        print(f"   Status: {result.status.upper()}")
+        print(f"   Rows Processed: {result.rows_processed:,}")
+        print(f"   Processing Time: {result.processing_time.total_seconds():.2f} seconds")
+        if result.error_message:
+            print(f"   Error: {result.error_message}")
+    
+    print("\n" + "="*80)
+    
+    # Create log file with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"csv_import_summary_{timestamp}.log"
+    write_summary_to_log(results, log_file)
+    print(f"\nSummary log written to: {log_file}")
+
+
+def process_csv_file(csv_file, conn, keep_temp=False) -> FileProcessingResult:
     """Process a single CSV file and load it into PostgreSQL."""
+    start_time = datetime.now()
+    result = FileProcessingResult(
+        file_path=csv_file,
+        status='error',  # Default to error, will be updated on success
+        rows_processed=0,
+        start_time=start_time,
+        end_time=start_time
+    )
+    
     try:
         # Generate a unique table name with a short hash of the filename to avoid collisions
         filename_hash = hashlib.md5(os.path.basename(csv_file).encode()).hexdigest()[:8]
@@ -272,8 +384,8 @@ def process_csv_file(csv_file, conn, keep_temp=False):
                 """, (temp_table_name,))
                 
                 # Get the result of the merge operation
-                result = cur.fetchone()
-                print(f"  - Merge function result: {result}")
+                result.rows_processed = cur.fetchone()[0]
+                print(f"  - Merge function result: {result.rows_processed}")
                 
                 # Check if any rows were affected by querying the target table
                 cur.execute("""SELECT COUNT(*) FROM csv_data;""")
@@ -283,6 +395,11 @@ def process_csv_file(csv_file, conn, keep_temp=False):
                 # Commit the merge transaction
                 conn.commit()
                 print("  - Merge transaction committed successfully")
+                
+                # Update result on success
+                result.status = 'success'
+                result.end_time = datetime.now()
+                return result
                 
             except Exception as e:
                 print(f"  - Error during merge: {str(e)}")
@@ -304,9 +421,10 @@ def process_csv_file(csv_file, conn, keep_temp=False):
                 else:
                     print(f"  - WARNING: Table {temp_table_name} no longer exists!")
             
-            return cur.rowcount
-            
     except Exception as e:
+        result.status = 'error'
+        result.error_message = str(e)
+        result.end_time = datetime.now()
         if not conn.autocommit:
             conn.rollback()
         raise Exception(f"Error processing {csv_file}: {str(e)}")
@@ -576,17 +694,28 @@ Examples:
         print(f"\nFound {len(file_paths)} files to process")
         
         # Process each CSV file
+        processing_results = []
         for i, file_path in enumerate(file_paths, 1):
             print(f"\nProcessing file {i} of {len(file_paths)}: {file_path}")
             try:
-                rows = process_csv_file(file_path, conn, args.keep_temp)
-                total_rows += rows
+                result = process_csv_file(file_path, conn, args.keep_temp)
+                processing_results.append(result)
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
+                # Create error result
+                error_result = FileProcessingResult(
+                    file_path=file_path,
+                    status='error',
+                    rows_processed=0,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    error_message=str(e)
+                )
+                processing_results.append(error_result)
                 continue
         
-        total_time = time.time() - start_time
-        print(f"Total: {total_rows:,} rows processed in {total_time:.2f} seconds")
+        # Print the final summary
+        print_processing_summary(processing_results)
         
     except Exception as e:
         print(f"Error: {str(e)}")
