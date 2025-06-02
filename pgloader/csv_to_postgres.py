@@ -180,7 +180,8 @@ def write_summary_to_log(results: List[FileProcessingResult], log_file: str) -> 
 
 def print_processing_summary(results: List[FileProcessingResult]) -> None:
     """Print a detailed summary of all processed files and write to log file."""
-    total_rows = sum(r.rows_processed for r in results if r.status == 'success')
+    # Calculate totals with proper type handling
+    total_rows = sum(r.rows_processed for r in results if r.status == 'success' and isinstance(r.rows_processed, (int, float)))
     total_time = sum(r.processing_time.total_seconds() for r in results)
     success_count = sum(1 for r in results if r.status == 'success')
     error_count = sum(1 for r in results if r.status == 'error')
@@ -193,8 +194,10 @@ def print_processing_summary(results: List[FileProcessingResult]) -> None:
     print(f"Failed Files: {error_count}")
     print(f"Total Rows Processed: {total_rows:,}")
     print(f"Total Processing Time: {total_time:.2f} seconds")
-    print(f"Average Processing Time per File: {total_time/len(results):.2f} seconds")
-    print(f"Average Rows per Second: {total_rows/total_time:.2f}")
+    if len(results) > 0:
+        print(f"Average Processing Time per File: {total_time/len(results):.2f} seconds")
+    if total_time > 0:
+        print(f"Average Rows per Second: {total_rows/total_time:.2f}")
     
     print("\n" + "-"*80)
     print("DETAILED FILE RESULTS")
@@ -383,8 +386,18 @@ def process_csv_file(csv_file, conn, keep_temp=False) -> FileProcessingResult:
                     ) as result;
                 """, (temp_table_name,))
                 
-                # Get the result of the merge operation
-                result.rows_processed = cur.fetchone()[0]
+                # Get the result of the merge operation and ensure it's an integer
+                merge_result = cur.fetchone()
+                if merge_result and merge_result[0] is not None:
+                    try:
+                        result.rows_processed = int(merge_result[0])
+                    except (ValueError, TypeError):
+                        print(f"  - Warning: Could not convert merge result to integer: {merge_result[0]}")
+                        result.rows_processed = 0
+                else:
+                    print("  - Warning: No rows returned from merge operation")
+                    result.rows_processed = 0
+                
                 print(f"  - Merge function result: {result.rows_processed}")
                 
                 # Check if any rows were affected by querying the target table
@@ -402,10 +415,10 @@ def process_csv_file(csv_file, conn, keep_temp=False) -> FileProcessingResult:
                 return result
                 
             except Exception as e:
-                print(f"  - Error during merge: {str(e)}")
+                print(f"  - Error during processing: {str(e)}")
                 print("  - Rolling back merge transaction but keeping temp table")
                 conn.rollback()
-                raise Exception(f"Error during merge: {str(e)}")
+                raise Exception(f"Error during processing: {str(e)}")
             
             # Verify table still exists if keep_temp is True
             if keep_temp:
@@ -427,7 +440,8 @@ def process_csv_file(csv_file, conn, keep_temp=False) -> FileProcessingResult:
         result.end_time = datetime.now()
         if not conn.autocommit:
             conn.rollback()
-        raise Exception(f"Error processing {csv_file}: {str(e)}")
+        print(f"  - Error during processing: {str(e)}")
+        return result
 
 
 def expand_file_patterns(patterns: Iterable[str]) -> List[str]:
