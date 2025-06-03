@@ -372,15 +372,71 @@ A high-performance Python script for analyzing unique values in CSV columns. Thi
 
 ## Features
 
-- Fast CSV processing using pandas and pyarrow
-- Memory-efficient by only reading the required column
-- Simple command-line interface
-- Generates clean, sorted output in CSV format
-- Handles large files efficiently
-- Optional filtering of low-frequency values
+- Fast CSV processing using optimized pandas and pyarrow
 - Colorized console output for better readability
-- Detailed summary metrics
-- Merge multiple analysis results with count aggregation
+- Detailed processing metrics and statistics
+- Automatic timestamped log file generation
+- Support for large files with efficient memory usage
+- Optional key tracking across files
+- Descriptive temporary table naming
+
+## Usage
+
+```bash
+python analyze_column.py [options] <csv_file> <column_name>
+```
+
+### Arguments
+
+- `csv_file`: Path to the CSV file to analyze
+- `column_name`: Name of the column to analyze
+
+### Options
+
+- `--min-count MIN_COUNT`: Only show values that appear at least MIN_COUNT times (default: 1)
+- `--track-keys`: Enable tracking of primary keys across files (optional)
+
+## Examples
+
+```bash
+# Basic usage
+python analyze_column.py data.csv "column_name"
+
+# Only show values that appear at least 5 times
+python analyze_column.py data.csv "column_name" --min-count 5
+
+# Enable key tracking
+python analyze_column.py data.csv "column_name" --track-keys
+```
+
+## Output
+
+The script provides:
+1. A count of unique values in the specified column
+2. Total number of rows processed
+3. Processing time
+4. A timestamped log file with detailed metrics
+5. If key tracking is enabled, a CSV file with key tracking results
+
+## Temporary Table Naming
+
+When processing files, the script creates temporary tables with descriptive names following this format:
+```
+temp_{sanitized_filename}_{hash}
+```
+
+Where:
+- `sanitized_filename`: The original filename with:
+  - File extension removed
+  - Non-alphanumeric characters converted to underscores
+  - Multiple consecutive underscores replaced with a single underscore
+  - Leading/trailing underscores removed
+- `hash`: A short 8-character MD5 hash of the original filename
+
+Examples:
+- `my-data-2023.csv` → `temp_my_data_2023_a1b2c3d4`
+- `company--info--2023.csv` → `temp_company_info_2023_e5f6g7h8`
+- `data@2023#special.csv` → `temp_data_2023_special_i9j0k1l2`
 
 ## Requirements
 

@@ -26,6 +26,7 @@ Arguments:
     --import-root       - Root directory to search for CSV files
     --include-regex     - Regex pattern to match directory names to include
     --exclude-regex     - Regex pattern to match directory names to exclude
+    --track-keys        - Enable tracking of primary keys across files
     --help              - Show this help message
 """
 
@@ -46,6 +47,27 @@ import shutil
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from collections import defaultdict
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a filename by converting non-alphanumeric characters to underscores
+    and ensuring no consecutive underscores.
+    
+    Args:
+        filename: The filename to sanitize
+        
+    Returns:
+        Sanitized filename string
+    """
+    # Remove file extension
+    base_name = os.path.splitext(filename)[0]
+    # Convert non-alphanumeric chars to underscore
+    sanitized = re.sub(r'[^a-zA-Z0-9]', '_', base_name)
+    # Replace multiple consecutive underscores with a single one
+    sanitized = re.sub(r'_+', '_', sanitized)
+    # Remove leading/trailing underscores
+    sanitized = sanitized.strip('_')
+    return sanitized
 
 @dataclass
 class FileProcessingResult:
@@ -268,9 +290,10 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
     )
     
     try:
-        # Generate a unique table name with a short hash of the filename to avoid collisions
+        # Generate a unique table name with sanitized filename and short hash
         filename_hash = hashlib.md5(os.path.basename(csv_file).encode()).hexdigest()[:8]
-        temp_table_name = f"temp_csv_import_{int(time.time())}_{filename_hash}"
+        sanitized_name = sanitize_filename(os.path.basename(csv_file))
+        temp_table_name = f"temp_{sanitized_name}_{filename_hash}"
         
         # Read CSV to determine column count and names
         with open(csv_file, 'r', encoding='utf-8') as f:
@@ -673,6 +696,7 @@ Examples:
     parser.add_argument("--import-root", help="Root directory to search for CSV.GZ files")
     parser.add_argument("--include-regex", help="Regex pattern to match directory names to include")
     parser.add_argument("--exclude-regex", help="Regex pattern to match directory names to exclude")
+    parser.add_argument("--track-keys", action="store_true", help="Enable tracking of primary keys across files")
     
     if len(sys.argv) == 1 or "--help" in sys.argv:
         print(__doc__)
@@ -685,8 +709,8 @@ Examples:
         print("Error: Either csv_files or --import-root must be specified")
         sys.exit(1)
     
-    # Initialize key tracker
-    key_tracker = KeyTracker()
+    # Initialize key tracker only if tracking is enabled
+    key_tracker = KeyTracker() if args.track_keys else None
     
     # Connect to PostgreSQL
     try:
@@ -773,11 +797,12 @@ Examples:
         # Print the final summary
         print_processing_summary(processing_results)
         
-        # Write key tracking results to CSV
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        key_tracking_file = f"key_tracking_{timestamp}.csv"
-        key_tracker.write_to_csv(key_tracking_file)
-        print(f"\nKey tracking results written to: {key_tracking_file}")
+        # Write key tracking results to CSV if tracking was enabled
+        if args.track_keys:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            key_tracking_file = f"key_tracking_{timestamp}.csv"
+            key_tracker.write_to_csv(key_tracking_file)
+            print(f"\nKey tracking results written to: {key_tracking_file}")
         
     except Exception as e:
         print(f"Error: {str(e)}")
