@@ -321,7 +321,7 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
             f.seek(0)
             next(reader)  # Skip header again
         
-        # Create columns list preserving case
+        # Create columns list preserving case and adding double quotes
         columns = [f'"{col}" text' for col in header]
         
         # Create temporary table with all columns as text
@@ -332,6 +332,7 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
         """
         
         print(f"  - Creating {'temporary' if not keep_temp else 'regular'} table {temp_table_name}")
+        print(f"  - Column names from CSV: {', '.join(header)}")
         
         # Close any existing transaction
         if not conn.autocommit:
@@ -387,15 +388,40 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
             cur.execute("SET client_min_messages TO NOTICE;")
             
             print("\n  - Retrieving merge SQL for debugging...")
+            # Get the actual case-sensitive column name from the temp table
+            cur.execute(f"""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = '{temp_table_name}' 
+                AND lower(column_name) = lower('ID_BB_GLOBAL')
+                LIMIT 1;
+            """)
+            actual_id_column = cur.fetchone()
+            if actual_id_column:
+                actual_id_column = actual_id_column[0]
+                print(f"  - Found ID_BB_GLOBAL column with exact case: {actual_id_column}")
+            else:
+                print("  - WARNING: Could not find ID_BB_GLOBAL column in temp table!")
+                print("  - Available columns:")
+                cur.execute(f"""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = '{temp_table_name}'
+                    ORDER BY ordinal_position;
+                """)
+                for col in cur.fetchall():
+                    print(f"    - {col[0]}")
+                raise Exception("ID_BB_GLOBAL column not found in temp table")
+            
             cur.execute("""
                 SELECT get_merge_jsonb_sql(
                     %s,  -- temp table name
-                    'ID_BB_GLOBAL',  -- ID column name (using exact case from CSV)
+                    %s,  -- ID column name (using exact case from CSV)
                     'csv_data',  -- target table name
                     'data',  -- JSONB column in target table
                     ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
                 );
-            """, (temp_table_name,))
+            """, (temp_table_name, actual_id_column))
             merge_sql = cur.fetchone()[0]
             print("\nGenerated merge SQL:")
             print(merge_sql)
@@ -410,20 +436,20 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
                 SELECT column_name 
                 FROM information_schema.columns 
                 WHERE table_name = '{temp_table_name}' 
-                AND column_name = 'ID_BB_GLOBAL';
-            """)
+                AND column_name = %s;
+            """, (actual_id_column,))
             id_column_exists = cur.fetchone() is not None
-            print(f"  - ID_BB_GLOBAL column exists in temp table: {id_column_exists}")
+            print(f"  - {actual_id_column} column exists in temp table: {id_column_exists}")
             
             if id_column_exists:
                 # Sample some IDs from the temp table
-                cur.execute(f"""SELECT "ID_BB_GLOBAL" FROM {temp_table_name} LIMIT 5;""")
+                cur.execute(f"""SELECT "{actual_id_column}" FROM {temp_table_name} LIMIT 5;""")
                 sample_ids = [row[0] for row in cur.fetchall()]
                 print(f"  - Sample IDs from temp table: {sample_ids}")
                 
                 # Track all keys in this file if key_tracker is provided
                 if key_tracker is not None:
-                    cur.execute(f"""SELECT "ID_BB_GLOBAL" FROM {temp_table_name};""")
+                    cur.execute(f"""SELECT "{actual_id_column}" FROM {temp_table_name};""")
                     for row in cur.fetchall():
                         key_tracker.add_key(row[0], csv_file)
             
@@ -441,12 +467,12 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
                 cur.execute("""
                     SELECT merge_jsonb_from_temp(
                         %s,  -- temp table name
-                        'ID_BB_GLOBAL',  -- ID column name (using exact case from CSV)
+                        %s,  -- ID column name (using exact case from CSV)
                         'csv_data',  -- target table name
                         'data',  -- JSONB column in target table
                         ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
                     ) as result;
-                """, (temp_table_name,))
+                """, (temp_table_name, actual_id_column))
                 
                 # Get the result of the merge operation and ensure it's an integer
                 merge_result = cur.fetchone()
