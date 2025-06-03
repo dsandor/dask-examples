@@ -326,13 +326,14 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
         
         # Create temporary table with all columns as text
         create_table_sql = f"""
-            CREATE {'TEMPORARY' if not keep_temp else ''} TABLE {temp_table_name} (
+            CREATE {'TEMPORARY' if not keep_temp else ''} TABLE "{temp_table_name}" (
                 {', '.join(columns)}
             ) {'ON COMMIT DROP' if not keep_temp else ''};
         """
         
         print(f"  - Creating {'temporary' if not keep_temp else 'regular'} table {temp_table_name}")
         print(f"  - Column names from CSV: {', '.join(header)}")
+        print(f"  - Create table SQL: {create_table_sql}")
         
         # Close any existing transaction
         if not conn.autocommit:
@@ -364,7 +365,7 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
             
             # Use COPY command for bulk loading with proper CSV format options
             copy_sql = f"""
-                COPY {temp_table_name} FROM '/import/{import_filename}' 
+                COPY "{temp_table_name}" FROM '/import/{import_filename}' 
                 WITH (
                     FORMAT csv,
                     HEADER true,
@@ -388,14 +389,63 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
             cur.execute("SET client_min_messages TO NOTICE;")
             
             print("\n  - Retrieving merge SQL for debugging...")
-            # Get the actual case-sensitive column name from the temp table
-            cur.execute(f"""
+            
+            # Debug: List all tables in the database
+            print("\n  - Available tables in database:")
+            cur.execute("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public'
+                ORDER BY table_name;
+            """)
+            for table in cur.fetchall():
+                print(f"    - {table[0]}")
+            
+            # Get the actual case-sensitive table name
+            print(f"\n  - Looking for table: {temp_table_name}")
+            cur.execute("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = %s
+                LIMIT 1;
+            """, (temp_table_name,))
+            actual_table_name = cur.fetchone()
+            if actual_table_name:
+                actual_table_name = actual_table_name[0]
+                print(f"  - Found table with exact case: {actual_table_name}")
+            else:
+                print("  - WARNING: Could not find table!")
+                print("  - Available tables:")
+                cur.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_name LIKE %s
+                    ORDER BY table_name;
+                """, (f"{temp_table_name}%",))
+                for table in cur.fetchall():
+                    print(f"    - {table[0]}")
+                raise Exception(f"Table {temp_table_name} not found")
+            
+            # Debug: List all columns in the table
+            print(f"\n  - Available columns in table {actual_table_name}:")
+            cur.execute("""
                 SELECT column_name 
                 FROM information_schema.columns 
-                WHERE table_name = '{temp_table_name}' 
+                WHERE table_name = %s
+                ORDER BY ordinal_position;
+            """, (actual_table_name,))
+            for col in cur.fetchall():
+                print(f"    - {col[0]}")
+            
+            # Get the actual case-sensitive column name from the temp table
+            print(f"\n  - Looking for ID_BB_GLOBAL column in {actual_table_name}")
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = %s 
                 AND lower(column_name) = lower('ID_BB_GLOBAL')
                 LIMIT 1;
-            """)
+            """, (actual_table_name,))
             actual_id_column = cur.fetchone()
             if actual_id_column:
                 actual_id_column = actual_id_column[0]
@@ -403,12 +453,12 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
             else:
                 print("  - WARNING: Could not find ID_BB_GLOBAL column in temp table!")
                 print("  - Available columns:")
-                cur.execute(f"""
+                cur.execute("""
                     SELECT column_name 
                     FROM information_schema.columns 
-                    WHERE table_name = '{temp_table_name}'
+                    WHERE table_name = %s
                     ORDER BY ordinal_position;
-                """)
+                """, (actual_table_name,))
                 for col in cur.fetchall():
                     print(f"    - {col[0]}")
                 raise Exception("ID_BB_GLOBAL column not found in temp table")
@@ -421,35 +471,35 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
                     'data',  -- JSONB column in target table
                     ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
                 );
-            """, (temp_table_name, actual_id_column))
+            """, (actual_table_name, actual_id_column))
             merge_sql = cur.fetchone()[0]
             print("\nGenerated merge SQL:")
             print(merge_sql)
             
             # Verify the temp table exists and has data
-            cur.execute(f"SELECT COUNT(*) FROM {temp_table_name};")
+            cur.execute(f'SELECT COUNT(*) FROM "{actual_table_name}";')
             temp_table_count = cur.fetchone()[0]
-            print(f"\n  - Temp table {temp_table_name} contains {temp_table_count} rows")
+            print(f"\n  - Temp table {actual_table_name} contains {temp_table_count} rows")
             
             # Check if the ID column exists in the temp table
-            cur.execute(f"""
+            cur.execute("""
                 SELECT column_name 
                 FROM information_schema.columns 
-                WHERE table_name = '{temp_table_name}' 
+                WHERE table_name = %s
                 AND column_name = %s;
-            """, (actual_id_column,))
+            """, (actual_table_name, actual_id_column))
             id_column_exists = cur.fetchone() is not None
             print(f"  - {actual_id_column} column exists in temp table: {id_column_exists}")
             
             if id_column_exists:
                 # Sample some IDs from the temp table
-                cur.execute(f"""SELECT "{actual_id_column}" FROM {temp_table_name} LIMIT 5;""")
+                cur.execute(f'SELECT "{actual_id_column}" FROM "{actual_table_name}" LIMIT 5;')
                 sample_ids = [row[0] for row in cur.fetchall()]
                 print(f"  - Sample IDs from temp table: {sample_ids}")
                 
                 # Track all keys in this file if key_tracker is provided
                 if key_tracker is not None:
-                    cur.execute(f"""SELECT "{actual_id_column}" FROM {temp_table_name};""")
+                    cur.execute(f'SELECT "{actual_id_column}" FROM "{actual_table_name}";')
                     for row in cur.fetchall():
                         key_tracker.add_key(row[0], csv_file)
             
@@ -472,7 +522,7 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
                         'data',  -- JSONB column in target table
                         ARRAY['created_at', 'updated_at', 'filedate', 'rownumber']  -- columns to exclude
                     ) as result;
-                """, (temp_table_name, actual_id_column))
+                """, (actual_table_name, actual_id_column))
                 
                 # Get the result of the merge operation and ensure it's an integer
                 merge_result = cur.fetchone()
@@ -510,17 +560,17 @@ def process_csv_file(csv_file, conn, keep_temp=False, key_tracker: Optional[KeyT
             
             # Verify table still exists if keep_temp is True
             if keep_temp:
-                cur.execute(f"""
+                cur.execute("""
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables 
                     WHERE table_name = %s
                 );
-                """, (temp_table_name,))
+                """, (actual_table_name,))
                 still_exists = cur.fetchone()[0]
                 if still_exists:
-                    print(f"  - Verified table {temp_table_name} still exists")
+                    print(f"  - Verified table {actual_table_name} still exists")
                 else:
-                    print(f"  - WARNING: Table {temp_table_name} no longer exists!")
+                    print(f"  - WARNING: Table {actual_table_name} no longer exists!")
             
     except Exception as e:
         result.status = 'error'
