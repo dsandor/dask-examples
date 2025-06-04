@@ -1,4 +1,4 @@
-# CSV File Processor
+# CSV File summarize
 
 A high-performance Python script for processing large gzipped CSV files across multiple directories. The script is designed to efficiently process large datasets while maintaining low memory usage.
 
